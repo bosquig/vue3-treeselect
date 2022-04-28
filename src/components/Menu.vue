@@ -1,4 +1,5 @@
 <script>
+import { h } from 'vue'
 import { MENU_BUFFER } from '../constants'
 import { watchSize, setupResizeAndScrollEventListeners } from '../utils'
 import Option from './Option'
@@ -67,16 +68,24 @@ export default {
 
       if (!instance.menu.isOpen) return null
 
-      return (
-        <div key={instance.key} ref="menu" class="vue-treeselect__menu" onMousedown={instance.handleMouseDown} style={this.menuStyle}>
-          {this.renderBeforeList()}
-          {instance.async
-            ? this.renderAsyncSearchMenuInner()
-            : instance.localSearch.active
-              ? this.renderLocalSearchMenuInner()
-              : this.renderNormalMenuInner()}
-          {this.renderAfterList()}
-        </div>
+      return h(
+          'div',
+          {
+            key: instance.key,
+            ref: 'menu',
+            class: 'vue-treeselect__menu',
+            onMousedown: instance.handleMouseDown,
+            style: this.menuStyle,
+          },
+          [
+              this.renderBeforeList(),
+              instance.async
+                  ? this.renderAsyncSearchMenuInner()
+                  : instance.localSearch.active
+                      ? this.renderLocalSearchMenuInner()
+                      : this.renderNormalMenuInner(),
+              this.renderAfterList(),
+          ]
       )
     },
 
@@ -152,57 +161,145 @@ export default {
     renderOptionList() {
       const { instance } = this
 
-      return (
-        <div class="vue-treeselect__list">
-          {instance.selectAllOption &&
-            <div class="vue-treeselect__list-item">
-              <div class="vue-treeselect__option vue-treeselect__option--selected" data-id="-1">
-                <div class="vue-treeselect__option-arrow-placeholder">&nbsp;</div>
-                <div class="vue-treeselect__label-container">
-                  <div class="vue-treeselect__checkbox-container">
-                    <span class="vue-treeselect__checkbox vue-treeselect__checkbox--checked">
-                      <span class="vue-treeselect__check-mark"></span>
-                      <span class="vue-treeselect__minus-mark"></span>
-                    </span>
-                  </div>
-                  <label class="vue-treeselect__label">Tous</label>
-                </div>
-              </div>
-            </div>
-            }
-          {instance.forest.normalizedOptions.map(rootNode => (
-            <Option node={rootNode} key={rootNode.id} />
-          ))}
-        </div>
+      const children = [
+        instance.forest.normalizedOptions.map(rootNode => {
+          return h(
+              Option,
+              {
+                node: rootNode,
+                key: rootNode.id,
+              }
+          )
+        }),
+      ]
+
+      if (instance.selectAllOption) {
+        children.push(h(
+            'div',
+            {
+              class: 'vue-treeselect__list-item',
+            },
+            [
+              h(
+                  'div',
+                  {
+                    class: 'vue-treeselect__option vue-treeselect__option--selected',
+                    'data-id': '-1',
+                  },
+                  [
+                      h(
+                          'div',
+                          {
+                            class: 'vue-treeselect__option-arrow-placeholder',
+                            innerHTML: '&nbsp;',
+                          }
+                      ),
+                      h(
+                          'div',
+                          {
+                            class: 'vue-treeselect__label-container',
+                          },
+                          [
+                              h(
+                                  'div',
+                                  {
+                                    class: 'vue-treeselect__checkbox-container',
+                                  },
+                                  [
+                                      h(
+                                          'span',
+                                          {
+                                            class: 'vue-treeselect__checkbox vue-treeselect__checkbox--checked',
+                                          },
+                                          [
+                                              h(
+                                                  'span',
+                                                  {
+                                                    class: 'vue-treeselect__check-mark',
+                                                  }
+                                              ),
+                                              h(
+                                                  'span',
+                                                  {
+                                                    class: 'vue-treeselect__minus-mark'
+                                                  }
+                                              ),
+                                          ]
+                                      ),
+                                  ]
+                              ),
+                              h(
+                                  'label',
+                                  {
+                                    class: 'vue-treeselect__label',
+                                    text: 'Tous',
+                                  }
+                              ),
+                          ]
+                      ),
+                  ]
+              )
+            ]
+        ))
+      }
+
+      // TODO Unfinished
+      return h(
+          'div',
+          {
+            class: 'vue-treeselect__list',
+          },
+          children
       )
     },
 
     renderSearchPromptTip() {
       const { instance } = this
 
-      return (
-        <Tip type="search-prompt" icon="warning">{instance.searchPromptText}</Tip>
+      return h(
+          Tip,
+          {
+            type: 'search-prompt',
+            icon: 'warning'
+          },
+          instance.searchPromptText
       )
     },
 
     renderLoadingOptionsTip() {
       const { instance } = this
 
-      return (
-        <Tip type="loading" icon="loader">{instance.loadingText}</Tip>
+      return h(
+          Tip,
+          {
+            type: 'loading',
+            icon: 'loader',
+          },
+          instance.loadingText
       )
     },
 
     renderLoadingRootOptionsErrorTip() {
       const { instance } = this
 
-      return (
-        <Tip type="error" icon="error">
-          {instance.rootOptionsStates.loadingError}
-          <a class="vue-treeselect__retry" onClick={instance.loadRootOptions} title={instance.retryTitle}>
-            {instance.retryText}
-          </a>
-        </Tip>
+      return h(
+          Tip,
+          {
+            type: 'error',
+            icon: 'error',
+          },
+          [
+            instance.rootOptionsStates.loadingError,
+              h(
+                  'a',
+                  {
+                    class: 'vue-treeselect__retry',
+                    title: instance.retryTitle,
+                    onClick: instance.loadRootOptions,
+                  },
+                  instance.retryText
+              ),
+          ]
       )
     },
 
@@ -212,28 +309,49 @@ export default {
 
       // TODO: retryTitle?
 
-      return (
-        <Tip type="error" icon="error">
-          {entry.loadingError}
-          <a class="vue-treeselect__retry" onClick={instance.handleRemoteSearch} title={instance.retryTitle}>
-            {instance.retryText}
-          </a>
-        </Tip>
+      return h(
+          Tip,
+          {
+            type: 'error',
+            icon: 'error',
+          },
+          [
+            entry.loadingError,
+              h(
+                  'a',
+                  {
+                    class: 'vue-treeselect__retry',
+                    title: instance.retryTitle,
+                    onClick: instance.handleRemoteSearch,
+                  }
+              ),
+          ]
       )
     },
 
     renderNoAvailableOptionsTip() {
       const { instance } = this
 
-      return (
-        <Tip type="no-options" icon="warning">{instance.noOptionsText}</Tip>
+      return h(
+          Tip,
+          {
+            type: 'no-options',
+            icon: 'warning',
+          },
+          instance.noOptionsText
       )
     },
 
     renderNoResultsTip() {
       const { instance } = this
-      return (
-        <Tip type="no-results" icon="warning">{instance.noResultsText}</Tip>
+
+      return h(
+          Tip,
+          {
+            type: 'no-results',
+            icon: 'warning',
+          },
+          instance.noResultsText
       )
     },
 
@@ -318,12 +436,22 @@ export default {
   },
 
   render() {
-    return (
-      <div ref="menu-container" class="vue-treeselect__menu-container" style={this.menuContainerStyle}>
-        <transition name="vue-treeselect__menu--transition">
-          {this.renderMenu()}
-        </transition>
-      </div>
+    return h(
+        'div',
+        {
+          ref: 'menu-container',
+          class: 'vue-treeselect__menu-container',
+          style: this.menuContainerStyle,
+        },
+        [
+            h(
+                'transition',
+                {
+                  name: 'vue-treeselect__menu--transition',
+                },
+                this.renderMenu
+            ),
+        ]
     )
   },
 }
