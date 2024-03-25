@@ -851,6 +851,16 @@ export default {
       this.initialize()
     },
 
+    modelValue: {
+      deep: true,
+      handler() {
+        const nodeIdsFromValue = this.extractCheckedNodeIdsFromValue()
+        const hasChanged = quickDiff(nodeIdsFromValue, this.internalValue)
+        if (!hasChanged) return
+        this.fixSelectedNodeIds(nodeIdsFromValue)
+      },
+    },
+
     multiple(newValue) {
       // We need to rebuild the state when switching from single-select mode
       // to multi-select mode.
@@ -877,12 +887,6 @@ export default {
       }
 
       this.$emit('search-change', this.trigger.searchQuery, this.getInstanceId())
-    },
-
-    value() {
-      const nodeIdsFromValue = this.extractCheckedNodeIdsFromValue()
-      const hasChanged = quickDiff(nodeIdsFromValue, this.internalValue)
-      if (hasChanged) this.fixSelectedNodeIds(nodeIdsFromValue)
     },
   },
 
@@ -1286,7 +1290,6 @@ export default {
         this.initialize()
         this.resetHighlightedOptionWhenNecessary(true)
       }
-      console.log(searchQuery, this.minChar);
       if (((searchQuery === "" && this.minChar > 0) || this.cacheOptions) && entry.isLoaded) {
         return done()
       }
@@ -1476,7 +1479,6 @@ export default {
       this.$nextTick(this.resetHighlightedOptionWhenNecessary)
       this.$nextTick(this.restoreMenuScrollPosition)
       if (!this.options && !this.async) this.loadRootOptions()
-      console.log(this.minChar);
       if (this.minChar == 0 && this.async) this.handleRemoteSearch();
       this.toggleClickOutsideEvent(true)
       this.$emit('open', this.getInstanceId())
