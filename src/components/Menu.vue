@@ -41,9 +41,6 @@ export default {
         this.onMenuClose()
       }
     },
-    'instance.forest'(newValue) {
-      console.log('instance forest', newValue);
-    }
   },
 
   created() {
