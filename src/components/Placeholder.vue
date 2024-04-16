@@ -1,4 +1,6 @@
 <script>
+  import { h } from 'vue'
+
   export default {
     name: 'vue-treeselect--placeholder',
     inject: [ 'instance' ],
@@ -11,10 +13,11 @@
         'vue-treeselect-helper-hide': instance.hasValue || instance.trigger.searchQuery,
       }
 
-      return (
-        <div class={placeholderClass}>
-          { instance.placeholder }
-        </div>
+      return h('div',
+          {
+            class: placeholderClass,
+          },
+          instance.placeholder
       )
     },
   }
