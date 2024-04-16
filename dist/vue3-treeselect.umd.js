@@ -449,7 +449,7 @@ module.exports = fails(function () {
 /***/ "1276":
 /***/ (function(module, exports, __webpack_require__) {
 
-var $String = String;
+"use strict";
 
 var apply = __webpack_require__("2ba4");
 var call = __webpack_require__("c65b");
@@ -646,67 +646,6 @@ module.exports = isObjectLike;
 
 /***/ }),
 
-/***/ "13d2":
-/***/ (function(module, exports, __webpack_require__) {
-
-var uncurryThis = __webpack_require__("e330");
-var fails = __webpack_require__("d039");
-var isCallable = __webpack_require__("1626");
-var hasOwn = __webpack_require__("1a2d");
-var DESCRIPTORS = __webpack_require__("83ab");
-var CONFIGURABLE_FUNCTION_NAME = __webpack_require__("5e77").CONFIGURABLE;
-var inspectSource = __webpack_require__("8925");
-var InternalStateModule = __webpack_require__("69f3");
-
-var enforceInternalState = InternalStateModule.enforce;
-var getInternalState = InternalStateModule.get;
-var $String = String;
-// eslint-disable-next-line es/no-object-defineproperty -- safe
-var defineProperty = Object.defineProperty;
-var stringSlice = uncurryThis(''.slice);
-var replace = uncurryThis(''.replace);
-var join = uncurryThis([].join);
-
-var CONFIGURABLE_LENGTH = DESCRIPTORS && !fails(function () {
-  return defineProperty(function () { /* empty */ }, 'length', { value: 8 }).length !== 8;
-});
-
-var TEMPLATE = String(String).split('String');
-
-var makeBuiltIn = module.exports = function (value, name, options) {
-  if (stringSlice($String(name), 0, 7) === 'Symbol(') {
-    name = '[' + replace($String(name), /^Symbol\(([^)]*)\)/, '$1') + ']';
-  }
-  if (options && options.getter) name = 'get ' + name;
-  if (options && options.setter) name = 'set ' + name;
-  if (!hasOwn(value, 'name') || (CONFIGURABLE_FUNCTION_NAME && value.name !== name)) {
-    if (DESCRIPTORS) defineProperty(value, 'name', { value: name, configurable: true });
-    else value.name = name;
-  }
-  if (CONFIGURABLE_LENGTH && options && hasOwn(options, 'arity') && value.length !== options.arity) {
-    defineProperty(value, 'length', { value: options.arity });
-  }
-  try {
-    if (options && hasOwn(options, 'constructor') && options.constructor) {
-      if (DESCRIPTORS) defineProperty(value, 'prototype', { writable: false });
-    // in V8 ~ Chrome 53, prototypes of some methods, like `Array.prototype.values`, are non-writable
-    } else if (value.prototype) value.prototype = undefined;
-  } catch (error) { /* empty */ }
-  var state = enforceInternalState(value);
-  if (!hasOwn(state, 'source')) {
-    state.source = join(TEMPLATE, typeof name == 'string' ? name : '');
-  } return value;
-};
-
-// add fake Function#toString for correct work wrapped methods / constructors with methods like LoDash isNative
-// eslint-disable-next-line no-extend-native -- required
-Function.prototype.toString = makeBuiltIn(function toString() {
-  return isCallable(this) && getInternalState(this).source || inspectSource(this);
-}, 'toString');
-
-
-/***/ }),
-
 /***/ "13d5":
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -722,7 +661,6 @@ var STRICT_METHOD = arrayMethodIsStrict('reduce');
 // Chrome 80-82 has a critical bug
 // https://bugs.chromium.org/p/chromium/issues/detail?id=1049982
 var CHROME_BUG = !IS_NODE && CHROME_VERSION > 79 && CHROME_VERSION < 83;
-var FORCED = CHROME_BUG || !arrayMethodIsStrict('reduce');
 
 // `Array.prototype.reduce` method
 // https://tc39.es/ecma262/#sec-array.prototype.reduce
@@ -761,25 +699,6 @@ module.exports = function (R, S) {
   throw TypeError('RegExp#exec called on incompatible receiver');
 };
 
-var FORCED = INCORRECT_TO_LENGTH || !properErrorOnNonWritableLength();
-
-// `Array.prototype.push` method
-// https://tc39.es/ecma262/#sec-array.prototype.push
-$({ target: 'Array', proto: true, arity: 1, forced: FORCED }, {
-  // eslint-disable-next-line no-unused-vars -- required for `.length`
-  push: function push(item) {
-    var O = toObject(this);
-    var len = lengthOfArrayLike(O);
-    var argCount = arguments.length;
-    doesNotExceedSafeInteger(len + argCount);
-    for (var i = 0; i < argCount; i++) {
-      O[len] = arguments[i];
-      len++;
-    }
-    setArrayLength(O, len);
-    return len;
-  }
-});
 
 /***/ }),
 
@@ -920,7 +839,7 @@ var TypeError = global.TypeError;
 // `RequireObjectCoercible` abstract operation
 // https://tc39.es/ecma262/#sec-requireobjectcoercible
 module.exports = function (it) {
-  if (isNullOrUndefined(it)) throw $TypeError("Can't call method on " + it);
+  if (it == undefined) throw TypeError("Can't call method on " + it);
   return it;
 };
 
@@ -1010,8 +929,8 @@ module.exports = function (index, length) {
 var global = __webpack_require__("da84");
 var getOwnPropertyDescriptor = __webpack_require__("06cf").f;
 var createNonEnumerableProperty = __webpack_require__("9112");
-var defineBuiltIn = __webpack_require__("cb2d");
-var defineGlobalProperty = __webpack_require__("6374");
+var redefine = __webpack_require__("6eeb");
+var setGlobal = __webpack_require__("ce4e");
 var copyConstructorProperties = __webpack_require__("e893");
 var isForced = __webpack_require__("94ca");
 
@@ -1038,13 +957,13 @@ module.exports = function (options, source) {
   if (GLOBAL) {
     target = global;
   } else if (STATIC) {
-    target = global[TARGET] || defineGlobalProperty(TARGET, {});
+    target = global[TARGET] || setGlobal(TARGET, {});
   } else {
     target = (global[TARGET] || {}).prototype;
   }
   if (target) for (key in source) {
     sourceProperty = source[key];
-    if (options.dontCallGetSet) {
+    if (options.noTargetGet) {
       descriptor = getOwnPropertyDescriptor(target, key);
       targetProperty = descriptor && descriptor.value;
     } else targetProperty = target[key];
@@ -1058,7 +977,8 @@ module.exports = function (options, source) {
     if (options.sham || (targetProperty && targetProperty.sham)) {
       createNonEnumerableProperty(sourceProperty, 'sham', true);
     }
-    defineBuiltIn(target, key, sourceProperty, options);
+    // extend global
+    redefine(target, key, sourceProperty, options);
   }
 };
 
@@ -1248,23 +1168,11 @@ $({ target: 'Object', stat: true, forced: FAILS_ON_PRIMITIVES, sham: !CORRECT_PR
 /***/ }),
 
 /***/ "342f":
-/***/ (function(module, exports) {
+/***/ (function(module, exports, __webpack_require__) {
 
-module.exports = typeof navigator != 'undefined' && String(navigator.userAgent) || '';
+var getBuiltIn = __webpack_require__("d066");
 
-
-/***/ }),
-
-/***/ "3511":
-/***/ (function(module, exports) {
-
-var $TypeError = TypeError;
-var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF; // 2 ** 53 - 1 == 9007199254740991
-
-module.exports = function (it) {
-  if (it > MAX_SAFE_INTEGER) throw $TypeError('Maximum allowed index exceeded');
-  return it;
-};
+module.exports = getBuiltIn('navigator', 'userAgent') || '';
 
 
 /***/ }),
@@ -1501,7 +1409,7 @@ module.exports = fails(function () {
 
 var wellKnownSymbol = __webpack_require__("b622");
 var create = __webpack_require__("7c73");
-var defineProperty = __webpack_require__("9bf2").f;
+var definePropertyModule = __webpack_require__("9bf2");
 
 var UNSCOPABLES = wellKnownSymbol('unscopables');
 var ArrayPrototype = Array.prototype;
@@ -1509,7 +1417,7 @@ var ArrayPrototype = Array.prototype;
 // Array.prototype[@@unscopables]
 // https://tc39.es/ecma262/#sec-array.prototype-@@unscopables
 if (ArrayPrototype[UNSCOPABLES] == undefined) {
-  defineProperty(ArrayPrototype, UNSCOPABLES, {
+  definePropertyModule.f(ArrayPrototype, UNSCOPABLES, {
     configurable: true,
     value: create(null)
   });
@@ -1518,6 +1426,25 @@ if (ArrayPrototype[UNSCOPABLES] == undefined) {
 // add a key to Array.prototype[@@unscopables]
 module.exports = function (key) {
   ArrayPrototype[UNSCOPABLES][key] = true;
+};
+
+
+/***/ }),
+
+/***/ "44e7":
+/***/ (function(module, exports, __webpack_require__) {
+
+var isObject = __webpack_require__("861d");
+var classof = __webpack_require__("c6b6");
+var wellKnownSymbol = __webpack_require__("b622");
+
+var MATCH = wellKnownSymbol('match');
+
+// `IsRegExp` abstract operation
+// https://tc39.es/ecma262/#sec-isregexp
+module.exports = function (it) {
+  var isRegExp;
+  return isObject(it) && ((isRegExp = it[MATCH]) !== undefined ? !!isRegExp : classof(it) == 'RegExp');
 };
 
 
@@ -1545,7 +1472,7 @@ $({ target: 'Array', proto: true, forced: !STRICT_METHOD }, {
 
 /***/ }),
 
-/***/ "4625":
+/***/ "4840":
 /***/ (function(module, exports, __webpack_require__) {
 
 var anObject = __webpack_require__("825a");
@@ -1588,7 +1515,7 @@ module.exports = function (input, pref) {
 
 /***/ }),
 
-/***/ "485a":
+/***/ "4930":
 /***/ (function(module, exports, __webpack_require__) {
 
 /* eslint-disable es-x/no-symbol -- required for testing */
@@ -2279,29 +2206,10 @@ module.exports = {
 /***/ "605d":
 /***/ (function(module, exports, __webpack_require__) {
 
-/* WEBPACK VAR INJECTION */(function(process) {var classof = __webpack_require__("c6b6");
-
-module.exports = typeof process != 'undefined' && classof(process) == 'process';
-
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__("4362")))
-
-/***/ }),
-
-/***/ "6374":
-/***/ (function(module, exports, __webpack_require__) {
-
+var classof = __webpack_require__("c6b6");
 var global = __webpack_require__("da84");
 
-// eslint-disable-next-line es/no-object-defineproperty -- safe
-var defineProperty = Object.defineProperty;
-
-module.exports = function (key, value) {
-  try {
-    defineProperty(global, key, { value: value, configurable: true, writable: true });
-  } catch (error) {
-    global[key] = value;
-  } return value;
-};
+module.exports = classof(global.process) == 'process';
 
 
 /***/ }),
@@ -2409,18 +2317,6 @@ module.exports = function (originalArray, length) {
   return new (arraySpeciesConstructor(originalArray))(length === 0 ? 0 : length);
 };
 
-isConstructorLegacy.sham = true;
-
-// `IsConstructor` abstract operation
-// https://tc39.es/ecma262/#sec-isconstructor
-module.exports = !construct || fails(function () {
-  var called;
-  return isConstructorModern(isConstructorModern.call)
-    || !isConstructorModern(Object)
-    || !isConstructorModern(function () { called = true; })
-    || called;
-}) ? isConstructorLegacy : isConstructorModern;
-
 
 /***/ }),
 
@@ -2486,7 +2382,7 @@ module.exports = !construct || fails(function () {
 /***/ "69f3":
 /***/ (function(module, exports, __webpack_require__) {
 
-var NATIVE_WEAK_MAP = __webpack_require__("cdce");
+var NATIVE_WEAK_MAP = __webpack_require__("7f9a");
 var global = __webpack_require__("da84");
 var uncurryThis = __webpack_require__("e330");
 var isObject = __webpack_require__("861d");
@@ -2656,34 +2552,6 @@ module.exports = function ($this, dummy, Wrapper) {
 
 /***/ }),
 
-/***/ "7234":
-/***/ (function(module, exports) {
-
-// we can't use just `it == null` since of `document.all` special case
-// https://tc39.es/ecma262/#sec-IsHTMLDDA-internal-slot-aec
-module.exports = function (it) {
-  return it === null || it === undefined;
-};
-
-
-/***/ }),
-
-/***/ "7282":
-/***/ (function(module, exports, __webpack_require__) {
-
-var uncurryThis = __webpack_require__("e330");
-var aCallable = __webpack_require__("59ed");
-
-module.exports = function (object, key, method) {
-  try {
-    // eslint-disable-next-line es/no-object-getownpropertydescriptor -- safe
-    return uncurryThis(aCallable(Object.getOwnPropertyDescriptor(object, key)[method]));
-  } catch (error) { /* empty */ }
-};
-
-
-/***/ }),
-
 /***/ "72f0":
 /***/ (function(module, exports) {
 
@@ -2768,7 +2636,7 @@ var Object = global.Object;
 // `ToObject` abstract operation
 // https://tc39.es/ecma262/#sec-toobject
 module.exports = function (argument) {
-  return $Object(requireObjectCoercible(argument));
+  return Object(requireObjectCoercible(argument));
 };
 
 
@@ -3015,25 +2883,6 @@ module.exports = baseTrim;
 
 var uncurryThis = __webpack_require__("e330");
 
-var documentAll = typeof document == 'object' && document.all;
-
-// https://tc39.es/ecma262/#sec-IsHTMLDDA-internal-slot
-// eslint-disable-next-line unicorn/no-typeof-undefined -- required for testing
-var IS_HTMLDDA = typeof documentAll == 'undefined' && documentAll !== undefined;
-
-module.exports = {
-  all: documentAll,
-  IS_HTMLDDA: IS_HTMLDDA
-};
-
-
-/***/ }),
-
-/***/ "90e3":
-/***/ (function(module, exports, __webpack_require__) {
-
-var uncurryThis = __webpack_require__("e330");
-
 var id = 0;
 var postfix = Math.random();
 var toString = uncurryThis(1.0.toString);
@@ -3248,13 +3097,15 @@ var IS_CONCAT_SPREADABLE_SUPPORT = V8_VERSION >= 51 || !fails(function () {
   return array.concat()[0] !== array;
 });
 
+var SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('concat');
+
 var isConcatSpreadable = function (O) {
   if (!isObject(O)) return false;
   var spreadable = O[IS_CONCAT_SPREADABLE];
   return spreadable !== undefined ? !!spreadable : isArray(O);
 };
 
-var FORCED = !IS_CONCAT_SPREADABLE_SUPPORT || !arrayMethodHasSpeciesSupport('concat');
+var FORCED = !IS_CONCAT_SPREADABLE_SUPPORT || !SPECIES_SUPPORT;
 
 // `Array.prototype.concat` method
 // https://tc39.es/ecma262/#sec-array.prototype.concat
@@ -3273,7 +3124,7 @@ $({ target: 'Array', proto: true, forced: FORCED }, {
         if (n + len > MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
         for (k = 0; k < len; k++, n++) if (k in E) createProperty(A, n, E[k]);
       } else {
-        doesNotExceedSafeInteger(n + 1);
+        if (n >= MAX_SAFE_INTEGER) throw TypeError(MAXIMUM_ALLOWED_INDEX_EXCEEDED);
         createProperty(A, n++, E);
       }
     }
@@ -3328,7 +3179,7 @@ exports.f = DESCRIPTORS ? V8_PROTOTYPE_DEFINE_BUG ? function defineProperty(O, P
   if (IE8_DOM_DEFINE) try {
     return $defineProperty(O, P, Attributes);
   } catch (error) { /* empty */ }
-  if ('get' in Attributes || 'set' in Attributes) throw $TypeError('Accessors not supported');
+  if ('get' in Attributes || 'set' in Attributes) throw TypeError('Accessors not supported');
   if ('value' in Attributes) O[P] = Attributes.value;
   return O;
 };
@@ -3416,11 +3267,11 @@ var arrayMethodIsStrict = __webpack_require__("a640");
 var un$Join = uncurryThis([].join);
 
 var ES3_STRINGS = IndexedObject != Object;
-var FORCED = ES3_STRINGS || !arrayMethodIsStrict('join', ',');
+var STRICT_METHOD = arrayMethodIsStrict('join', ',');
 
 // `Array.prototype.join` method
 // https://tc39.es/ecma262/#sec-array.prototype.join
-$({ target: 'Array', proto: true, forced: FORCED }, {
+$({ target: 'Array', proto: true, forced: ES3_STRINGS || !STRICT_METHOD }, {
   join: function join(separator) {
     return un$Join(toIndexedObject(this), separator === undefined ? ',' : separator);
   }
@@ -3457,7 +3308,7 @@ var flattenIntoArray = function (target, original, source, sourceLen, start, dep
         elementLen = lengthOfArrayLike(element);
         targetIndex = flattenIntoArray(target, original, element, elementLen, targetIndex, depth - 1) - 1;
       } else {
-        doesNotExceedSafeInteger(targetIndex + 1);
+        if (targetIndex >= 0x1FFFFFFFFFFFFF) throw TypeError('Exceed the acceptable array length');
         target[targetIndex] = element;
       }
 
@@ -3484,14 +3335,8 @@ var toAbsoluteIndex = __webpack_require__("23cb");
 var toIntegerOrInfinity = __webpack_require__("5926");
 var lengthOfArrayLike = __webpack_require__("07fa");
 var toObject = __webpack_require__("7b0b");
-var toAbsoluteIndex = __webpack_require__("23cb");
-var toIntegerOrInfinity = __webpack_require__("5926");
-var lengthOfArrayLike = __webpack_require__("07fa");
-var setArrayLength = __webpack_require__("3a34");
-var doesNotExceedSafeInteger = __webpack_require__("3511");
 var arraySpeciesCreate = __webpack_require__("65f0");
 var createProperty = __webpack_require__("8418");
-var deletePropertyOrThrow = __webpack_require__("083a");
 var arrayMethodHasSpeciesSupport = __webpack_require__("1dde");
 
 var HAS_SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('splice');
@@ -3499,6 +3344,8 @@ var HAS_SPECIES_SUPPORT = arrayMethodHasSpeciesSupport('splice');
 var TypeError = global.TypeError;
 var max = Math.max;
 var min = Math.min;
+var MAX_SAFE_INTEGER = 0x1FFFFFFFFFFFFF;
+var MAXIMUM_ALLOWED_LENGTH_EXCEEDED = 'Maximum allowed length exceeded';
 
 // `Array.prototype.splice` method
 // https://tc39.es/ecma262/#sec-array.prototype.splice
@@ -3522,7 +3369,6 @@ $({ target: 'Array', proto: true, forced: !HAS_SPECIES_SUPPORT }, {
     if (len + insertCount - actualDeleteCount > MAX_SAFE_INTEGER) {
       throw TypeError(MAXIMUM_ALLOWED_LENGTH_EXCEEDED);
     }
-    doesNotExceedSafeInteger(len + insertCount - actualDeleteCount);
     A = arraySpeciesCreate(O, actualDeleteCount);
     for (k = 0; k < actualDeleteCount; k++) {
       from = actualStart + k;
@@ -3534,21 +3380,21 @@ $({ target: 'Array', proto: true, forced: !HAS_SPECIES_SUPPORT }, {
         from = k + actualDeleteCount;
         to = k + insertCount;
         if (from in O) O[to] = O[from];
-        else deletePropertyOrThrow(O, to);
+        else delete O[to];
       }
-      for (k = len; k > len - actualDeleteCount + insertCount; k--) deletePropertyOrThrow(O, k - 1);
+      for (k = len; k > len - actualDeleteCount + insertCount; k--) delete O[k - 1];
     } else if (insertCount > actualDeleteCount) {
       for (k = len - actualDeleteCount; k > actualStart; k--) {
         from = k + actualDeleteCount - 1;
         to = k + insertCount - 1;
         if (from in O) O[to] = O[from];
-        else deletePropertyOrThrow(O, to);
+        else delete O[to];
       }
     }
     for (k = 0; k < insertCount; k++) {
       O[k + actualStart] = arguments[k + 2];
     }
-    setArrayLength(O, len - actualDeleteCount + insertCount);
+    O.length = len - actualDeleteCount + insertCount;
     return A;
   }
 });
@@ -3601,8 +3447,6 @@ module.exports = function (METHOD_NAME, argument) {
 
 "use strict";
 
-var $ = __webpack_require__("23e7");
-var IS_PURE = __webpack_require__("c430");
 var DESCRIPTORS = __webpack_require__("83ab");
 var global = __webpack_require__("da84");
 var uncurryThis = __webpack_require__("e330");
@@ -3622,7 +3466,6 @@ var trim = __webpack_require__("58a8").trim;
 
 var NUMBER = 'Number';
 var NativeNumber = global[NUMBER];
-var PureNumberNamespace = path[NUMBER];
 var NumberPrototype = NativeNumber.prototype;
 var TypeError = global.TypeError;
 var arraySlice = uncurryThis(''.slice);
@@ -3665,13 +3508,6 @@ var toNumber = function (argument) {
   } return +it;
 };
 
-var FORCED = isForced(NUMBER, !NativeNumber(' 0o1') || !NativeNumber('0b1') || NativeNumber('+0x1'));
-
-var calledWithNew = function (dummy) {
-  // includes check on 1..constructor(foo) case
-  return isPrototypeOf(NumberPrototype, dummy) && fails(function () { thisNumberValue(dummy); });
-};
-
 // `Number` constructor
 // https://tc39.es/ecma262/#sec-number-constructor
 if (isForced(NUMBER, !NativeNumber(' 0o1') || !NativeNumber('0b1') || NativeNumber('+0x1'))) {
@@ -3694,10 +3530,10 @@ if (isForced(NUMBER, !NativeNumber(' 0o1') || !NativeNumber('0b1') || NativeNumb
       defineProperty(NumberWrapper, key, getOwnPropertyDescriptor(NativeNumber, key));
     }
   }
-};
-
-if (IS_PURE && PureNumberNamespace) copyConstructorProperties(path[NUMBER], PureNumberNamespace);
-if (FORCED || IS_PURE) copyConstructorProperties(path[NUMBER], NativeNumber);
+  NumberWrapper.prototype = NumberPrototype;
+  NumberPrototype.constructor = NumberWrapper;
+  redefine(global, NUMBER, NumberWrapper);
+}
 
 
 /***/ }),
@@ -3737,7 +3573,6 @@ module.exports = function () {
   if (that.multiline) result += 'm';
   if (that.dotAll) result += 's';
   if (that.unicode) result += 'u';
-  if (that.unicodeSets) result += 'v';
   if (that.sticky) result += 'y';
   return result;
 };
@@ -4030,23 +3865,6 @@ module.exports = debounce;
 
 /***/ }),
 
-/***/ "b42e":
-/***/ (function(module, exports) {
-
-var ceil = Math.ceil;
-var floor = Math.floor;
-
-// `Math.trunc` method
-// https://tc39.es/ecma262/#sec-math.trunc
-// eslint-disable-next-line es/no-math-trunc -- safe
-module.exports = Math.trunc || function trunc(x) {
-  var n = +x;
-  return (n > 0 ? floor : ceil)(n);
-};
-
-
-/***/ }),
-
 /***/ "b4b0":
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -4125,9 +3943,10 @@ var global = __webpack_require__("da84");
 var shared = __webpack_require__("5692");
 var hasOwn = __webpack_require__("1a2d");
 var uid = __webpack_require__("90e3");
-var NATIVE_SYMBOL = __webpack_require__("04f8");
+var NATIVE_SYMBOL = __webpack_require__("4930");
 var USE_SYMBOL_AS_UID = __webpack_require__("fdbf");
 
+var WellKnownSymbolsStore = shared('wks');
 var Symbol = global.Symbol;
 var symbolFor = Symbol && Symbol['for'];
 var createWellKnownSymbol = USE_SYMBOL_AS_UID ? Symbol : Symbol && Symbol.withoutSetter || uid;
@@ -4343,29 +4162,14 @@ module.exports = function (it) {
 
 /***/ }),
 
-/***/ "c6b6":
-/***/ (function(module, exports, __webpack_require__) {
-
-var uncurryThis = __webpack_require__("e330");
-
-var toString = uncurryThis({}.toString);
-var stringSlice = uncurryThis(''.slice);
-
-module.exports = function (it) {
-  return stringSlice(toString(it), 8, -1);
-};
-
-
-/***/ }),
-
 /***/ "c6cd":
 /***/ (function(module, exports, __webpack_require__) {
 
 var global = __webpack_require__("da84");
-var defineGlobalProperty = __webpack_require__("6374");
+var setGlobal = __webpack_require__("ce4e");
 
 var SHARED = '__core-js_shared__';
-var store = global[SHARED] || defineGlobalProperty(SHARED, {});
+var store = global[SHARED] || setGlobal(SHARED, {});
 
 module.exports = store;
 
@@ -4479,40 +4283,6 @@ module.exports = function (object, names) {
 
 /***/ }),
 
-/***/ "cb2d":
-/***/ (function(module, exports, __webpack_require__) {
-
-var isCallable = __webpack_require__("1626");
-var definePropertyModule = __webpack_require__("9bf2");
-var makeBuiltIn = __webpack_require__("13d2");
-var defineGlobalProperty = __webpack_require__("6374");
-
-module.exports = function (O, key, value, options) {
-  if (!options) options = {};
-  var simple = options.enumerable;
-  var name = options.name !== undefined ? options.name : key;
-  if (isCallable(value)) makeBuiltIn(value, name, options);
-  if (options.global) {
-    if (simple) O[key] = value;
-    else defineGlobalProperty(key, value);
-  } else {
-    try {
-      if (!options.unsafe) delete O[key];
-      else if (O[key]) simple = true;
-    } catch (error) { /* empty */ }
-    if (simple) O[key] = value;
-    else definePropertyModule.f(O, key, {
-      value: value,
-      enumerable: false,
-      configurable: !options.nonConfigurable,
-      writable: !options.nonWritable
-    });
-  } return O;
-};
-
-
-/***/ }),
-
 /***/ "cc12":
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -4558,7 +4328,7 @@ module.exports = identity;
 
 /***/ }),
 
-/***/ "cdce":
+/***/ "ce4e":
 /***/ (function(module, exports, __webpack_require__) {
 
 var global = __webpack_require__("da84");
@@ -4683,13 +4453,13 @@ module.exports = Object.setPrototypeOf || ('__proto__' in {} ? function () {
 /***/ (function(module, exports, __webpack_require__) {
 
 var TO_STRING_TAG_SUPPORT = __webpack_require__("00ee");
-var defineBuiltIn = __webpack_require__("cb2d");
+var redefine = __webpack_require__("6eeb");
 var toString = __webpack_require__("b041");
 
 // `Object.prototype.toString` method
 // https://tc39.es/ecma262/#sec-object.prototype.tostring
 if (!TO_STRING_TAG_SUPPORT) {
-  defineBuiltIn(Object.prototype, 'toString', toString, { unsafe: true });
+  redefine(Object.prototype, 'toString', toString, { unsafe: true });
 }
 
 
@@ -4723,7 +4493,7 @@ var createMethod = function (IS_RIGHT) {
       }
       index += i;
       if (IS_RIGHT ? index < 0 : length <= index) {
-        throw $TypeError('Reduce of empty array with no initial value');
+        throw TypeError('Reduce of empty array with no initial value');
       }
     }
     for (;IS_RIGHT ? index >= 0 : length > index; index += i) if (index in self) {
@@ -4931,316 +4701,6 @@ module.exports = Object.keys || function keys(O) {
   return internalObjectKeys(O, enumBugKeys);
 };
 
-
-/***/ }),
-
-/***/ "df7c":
-/***/ (function(module, exports, __webpack_require__) {
-
-/* WEBPACK VAR INJECTION */(function(process) {// .dirname, .basename, and .extname methods are extracted from Node.js v8.11.1,
-// backported and transplited with Babel, with backwards-compat fixes
-
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-// resolves . and .. elements in a path array with directory names there
-// must be no slashes, empty elements, or device names (c:\) in the array
-// (so also no leading and trailing slashes - it does not distinguish
-// relative and absolute paths)
-function normalizeArray(parts, allowAboveRoot) {
-  // if the path tries to go above the root, `up` ends up > 0
-  var up = 0;
-  for (var i = parts.length - 1; i >= 0; i--) {
-    var last = parts[i];
-    if (last === '.') {
-      parts.splice(i, 1);
-    } else if (last === '..') {
-      parts.splice(i, 1);
-      up++;
-    } else if (up) {
-      parts.splice(i, 1);
-      up--;
-    }
-  }
-
-  // if the path is allowed to go above the root, restore leading ..s
-  if (allowAboveRoot) {
-    for (; up--; up) {
-      parts.unshift('..');
-    }
-  }
-
-  return parts;
-}
-
-// path.resolve([from ...], to)
-// posix version
-exports.resolve = function() {
-  var resolvedPath = '',
-      resolvedAbsolute = false;
-
-  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
-    var path = (i >= 0) ? arguments[i] : process.cwd();
-
-    // Skip empty and invalid entries
-    if (typeof path !== 'string') {
-      throw new TypeError('Arguments to path.resolve must be strings');
-    } else if (!path) {
-      continue;
-    }
-
-    resolvedPath = path + '/' + resolvedPath;
-    resolvedAbsolute = path.charAt(0) === '/';
-  }
-
-  // At this point the path should be resolved to a full absolute path, but
-  // handle relative paths to be safe (might happen when process.cwd() fails)
-
-  // Normalize the path
-  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
-    return !!p;
-  }), !resolvedAbsolute).join('/');
-
-  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
-};
-
-// path.normalize(path)
-// posix version
-exports.normalize = function(path) {
-  var isAbsolute = exports.isAbsolute(path),
-      trailingSlash = substr(path, -1) === '/';
-
-  // Normalize the path
-  path = normalizeArray(filter(path.split('/'), function(p) {
-    return !!p;
-  }), !isAbsolute).join('/');
-
-  if (!path && !isAbsolute) {
-    path = '.';
-  }
-  if (path && trailingSlash) {
-    path += '/';
-  }
-
-  return (isAbsolute ? '/' : '') + path;
-};
-
-// posix version
-exports.isAbsolute = function(path) {
-  return path.charAt(0) === '/';
-};
-
-// posix version
-exports.join = function() {
-  var paths = Array.prototype.slice.call(arguments, 0);
-  return exports.normalize(filter(paths, function(p, index) {
-    if (typeof p !== 'string') {
-      throw new TypeError('Arguments to path.join must be strings');
-    }
-    return p;
-  }).join('/'));
-};
-
-
-// path.relative(from, to)
-// posix version
-exports.relative = function(from, to) {
-  from = exports.resolve(from).substr(1);
-  to = exports.resolve(to).substr(1);
-
-  function trim(arr) {
-    var start = 0;
-    for (; start < arr.length; start++) {
-      if (arr[start] !== '') break;
-    }
-
-    var end = arr.length - 1;
-    for (; end >= 0; end--) {
-      if (arr[end] !== '') break;
-    }
-
-    if (start > end) return [];
-    return arr.slice(start, end - start + 1);
-  }
-
-  var fromParts = trim(from.split('/'));
-  var toParts = trim(to.split('/'));
-
-  var length = Math.min(fromParts.length, toParts.length);
-  var samePartsLength = length;
-  for (var i = 0; i < length; i++) {
-    if (fromParts[i] !== toParts[i]) {
-      samePartsLength = i;
-      break;
-    }
-  }
-
-  var outputParts = [];
-  for (var i = samePartsLength; i < fromParts.length; i++) {
-    outputParts.push('..');
-  }
-
-  outputParts = outputParts.concat(toParts.slice(samePartsLength));
-
-  return outputParts.join('/');
-};
-
-exports.sep = '/';
-exports.delimiter = ':';
-
-exports.dirname = function (path) {
-  if (typeof path !== 'string') path = path + '';
-  if (path.length === 0) return '.';
-  var code = path.charCodeAt(0);
-  var hasRoot = code === 47 /*/*/;
-  var end = -1;
-  var matchedSlash = true;
-  for (var i = path.length - 1; i >= 1; --i) {
-    code = path.charCodeAt(i);
-    if (code === 47 /*/*/) {
-        if (!matchedSlash) {
-          end = i;
-          break;
-        }
-      } else {
-      // We saw the first non-path separator
-      matchedSlash = false;
-    }
-  }
-
-  if (end === -1) return hasRoot ? '/' : '.';
-  if (hasRoot && end === 1) {
-    // return '//';
-    // Backwards-compat fix:
-    return '/';
-  }
-  return path.slice(0, end);
-};
-
-function basename(path) {
-  if (typeof path !== 'string') path = path + '';
-
-  var start = 0;
-  var end = -1;
-  var matchedSlash = true;
-  var i;
-
-  for (i = path.length - 1; i >= 0; --i) {
-    if (path.charCodeAt(i) === 47 /*/*/) {
-        // If we reached a path separator that was not part of a set of path
-        // separators at the end of the string, stop now
-        if (!matchedSlash) {
-          start = i + 1;
-          break;
-        }
-      } else if (end === -1) {
-      // We saw the first non-path separator, mark this as the end of our
-      // path component
-      matchedSlash = false;
-      end = i + 1;
-    }
-  }
-
-  if (end === -1) return '';
-  return path.slice(start, end);
-}
-
-// Uses a mixed approach for backwards-compatibility, as ext behavior changed
-// in new Node.js versions, so only basename() above is backported here
-exports.basename = function (path, ext) {
-  var f = basename(path);
-  if (ext && f.substr(-1 * ext.length) === ext) {
-    f = f.substr(0, f.length - ext.length);
-  }
-  return f;
-};
-
-exports.extname = function (path) {
-  if (typeof path !== 'string') path = path + '';
-  var startDot = -1;
-  var startPart = 0;
-  var end = -1;
-  var matchedSlash = true;
-  // Track the state of characters (if any) we see before our first dot and
-  // after any path separator we find
-  var preDotState = 0;
-  for (var i = path.length - 1; i >= 0; --i) {
-    var code = path.charCodeAt(i);
-    if (code === 47 /*/*/) {
-        // If we reached a path separator that was not part of a set of path
-        // separators at the end of the string, stop now
-        if (!matchedSlash) {
-          startPart = i + 1;
-          break;
-        }
-        continue;
-      }
-    if (end === -1) {
-      // We saw the first non-path separator, mark this as the end of our
-      // extension
-      matchedSlash = false;
-      end = i + 1;
-    }
-    if (code === 46 /*.*/) {
-        // If this is our first dot, mark it as the start of our extension
-        if (startDot === -1)
-          startDot = i;
-        else if (preDotState !== 1)
-          preDotState = 1;
-    } else if (startDot !== -1) {
-      // We saw a non-dot and non-path separator before our dot, so we should
-      // have a good chance at having a non-empty extension
-      preDotState = -1;
-    }
-  }
-
-  if (startDot === -1 || end === -1 ||
-      // We saw a non-dot character immediately before the dot
-      preDotState === 0 ||
-      // The (right-most) trimmed path component is exactly '..'
-      preDotState === 1 && startDot === end - 1 && startDot === startPart + 1) {
-    return '';
-  }
-  return path.slice(startDot, end);
-};
-
-function filter (xs, f) {
-    if (xs.filter) return xs.filter(f);
-    var res = [];
-    for (var i = 0; i < xs.length; i++) {
-        if (f(xs[i], i, xs)) res.push(xs[i]);
-    }
-    return res;
-}
-
-// String.prototype.substr - negative index don't work in IE8
-var substr = 'ab'.substr(-1) === 'b'
-    ? function (str, start, len) { return str.substr(start, len) }
-    : function (str, start, len) {
-        if (start < 0) start = str.length + start;
-        return str.substr(start, len);
-    }
-;
-
-/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__("4362")))
 
 /***/ }),
 
@@ -5482,95 +4942,6 @@ module.exports = uncurryThis([].slice);
 
 /***/ }),
 
-/***/ "e9c4":
-/***/ (function(module, exports, __webpack_require__) {
-
-var $ = __webpack_require__("23e7");
-var getBuiltIn = __webpack_require__("d066");
-var apply = __webpack_require__("2ba4");
-var call = __webpack_require__("c65b");
-var uncurryThis = __webpack_require__("e330");
-var fails = __webpack_require__("d039");
-var isCallable = __webpack_require__("1626");
-var isSymbol = __webpack_require__("d9b5");
-var arraySlice = __webpack_require__("f36a");
-var getReplacerFunction = __webpack_require__("e267");
-var NATIVE_SYMBOL = __webpack_require__("04f8");
-
-var $String = String;
-var $stringify = getBuiltIn('JSON', 'stringify');
-var exec = uncurryThis(/./.exec);
-var charAt = uncurryThis(''.charAt);
-var charCodeAt = uncurryThis(''.charCodeAt);
-var replace = uncurryThis(''.replace);
-var numberToString = uncurryThis(1.0.toString);
-
-var tester = /[\uD800-\uDFFF]/g;
-var low = /^[\uD800-\uDBFF]$/;
-var hi = /^[\uDC00-\uDFFF]$/;
-
-var WRONG_SYMBOLS_CONVERSION = !NATIVE_SYMBOL || fails(function () {
-  var symbol = getBuiltIn('Symbol')();
-  // MS Edge converts symbol values to JSON as {}
-  return $stringify([symbol]) != '[null]'
-    // WebKit converts symbol values to JSON as null
-    || $stringify({ a: symbol }) != '{}'
-    // V8 throws on boxed symbols
-    || $stringify(Object(symbol)) != '{}';
-});
-
-// https://github.com/tc39/proposal-well-formed-stringify
-var ILL_FORMED_UNICODE = fails(function () {
-  return $stringify('\uDF06\uD834') !== '"\\udf06\\ud834"'
-    || $stringify('\uDEAD') !== '"\\udead"';
-});
-
-var stringifyWithSymbolsFix = function (it, replacer) {
-  var args = arraySlice(arguments);
-  var $replacer = getReplacerFunction(replacer);
-  if (!isCallable($replacer) && (it === undefined || isSymbol(it))) return; // IE8 returns string on undefined
-  args[1] = function (key, value) {
-    // some old implementations (like WebKit) could pass numbers as keys
-    if (isCallable($replacer)) value = call($replacer, this, $String(key), value);
-    if (!isSymbol(value)) return value;
-  };
-  return apply($stringify, null, args);
-};
-
-var fixIllFormed = function (match, offset, string) {
-  var prev = charAt(string, offset - 1);
-  var next = charAt(string, offset + 1);
-  if ((exec(low, match) && !exec(hi, next)) || (exec(hi, match) && !exec(low, prev))) {
-    return '\\u' + numberToString(charCodeAt(match, 0), 16);
-  } return match;
-};
-
-if ($stringify) {
-  // `JSON.stringify` method
-  // https://tc39.es/ecma262/#sec-json.stringify
-  $({ target: 'JSON', stat: true, arity: 3, forced: WRONG_SYMBOLS_CONVERSION || ILL_FORMED_UNICODE }, {
-    // eslint-disable-next-line no-unused-vars -- required for `.length`
-    stringify: function stringify(it, replacer, space) {
-      var args = arraySlice(arguments);
-      var result = apply(WRONG_SYMBOLS_CONVERSION ? stringifyWithSymbolsFix : $stringify, null, args);
-      return ILL_FORMED_UNICODE && typeof result == 'string' ? replace(result, tester, fixIllFormed) : result;
-    }
-  });
-}
-
-
-/***/ }),
-
-/***/ "f36a":
-/***/ (function(module, exports, __webpack_require__) {
-
-var uncurryThis = __webpack_require__("e330");
-
-module.exports = uncurryThis([].slice);
-
-
-/***/ }),
-
 /***/ "f5df":
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -5598,7 +4969,7 @@ module.exports = TO_STRING_TAG_SUPPORT ? classofRaw : function (it) {
   var O, tag, result;
   return it === undefined ? 'Undefined' : it === null ? 'Null'
     // @@toStringTag case
-    : typeof (tag = tryGet(O = $Object(it), TO_STRING_TAG)) == 'string' ? tag
+    : typeof (tag = tryGet(O = Object(it), TO_STRING_TAG)) == 'string' ? tag
     // builtinTag case
     : CORRECT_ARGUMENTS ? classofRaw(O)
     // ES3 arguments fallback
@@ -5706,26 +5077,22 @@ function _iterableToArrayLimit(arr, i) {
     _e = err;
   } finally {
     try {
-      if (_x = (_i = _i.call(arr)).next, 0 === i) {
-        if (Object(_i) !== _i) return;
-        _n = !1;
-      } else for (; !(_n = (_s = _x.call(_i)).done) && (_arr.push(_s.value), _arr.length !== i); _n = !0);
-    } catch (err) {
-      _d = !0, _e = err;
+      if (!_n && _i["return"] != null) _i["return"]();
     } finally {
-      try {
-        if (!_n && null != _i["return"] && (_r = _i["return"](), Object(_r) !== _r)) return;
-      } finally {
-        if (_d) throw _e;
-      }
+      if (_d) throw _e;
     }
-    return _arr;
   }
+
+  return _arr;
 }
 // CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/arrayLikeToArray.js
 function _arrayLikeToArray(arr, len) {
   if (len == null || len > arr.length) len = arr.length;
-  for (var i = 0, arr2 = new Array(len); i < len; i++) arr2[i] = arr[i];
+
+  for (var i = 0, arr2 = new Array(len); i < len; i++) {
+    arr2[i] = arr[i];
+  }
+
   return arr2;
 }
 // CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/unsupportedIterableToArray.js
@@ -5750,39 +5117,8 @@ function _nonIterableRest() {
 function _slicedToArray(arr, i) {
   return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest();
 }
-// CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/typeof.js
-function _typeof(obj) {
-  "@babel/helpers - typeof";
-
-  return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (obj) {
-    return typeof obj;
-  } : function (obj) {
-    return obj && "function" == typeof Symbol && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj;
-  }, _typeof(obj);
-}
-// CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/toPrimitive.js
-
-function _toPrimitive(input, hint) {
-  if (_typeof(input) !== "object" || input === null) return input;
-  var prim = input[Symbol.toPrimitive];
-  if (prim !== undefined) {
-    var res = prim.call(input, hint || "default");
-    if (_typeof(res) !== "object") return res;
-    throw new TypeError("@@toPrimitive must return a primitive value.");
-  }
-  return (hint === "string" ? String : Number)(input);
-}
-// CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/toPropertyKey.js
-
-
-function _toPropertyKey(arg) {
-  var key = _toPrimitive(arg, "string");
-  return _typeof(key) === "symbol" ? key : String(key);
-}
 // CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/defineProperty.js
-
 function _defineProperty(obj, key, value) {
-  key = _toPropertyKey(key);
   if (key in obj) {
     Object.defineProperty(obj, key, {
       value: value,
@@ -5793,6 +5129,7 @@ function _defineProperty(obj, key, value) {
   } else {
     obj[key] = value;
   }
+
   return obj;
 }
 // CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/arrayWithoutHoles.js
@@ -5818,84 +5155,19 @@ function _toConsumableArray(arr) {
 }
 // CONCATENATED MODULE: ./node_modules/@babel/runtime/helpers/esm/objectSpread2.js
 
+
 function ownKeys(object, enumerableOnly) {
   var keys = Object.keys(object);
+
   if (Object.getOwnPropertySymbols) {
     var symbols = Object.getOwnPropertySymbols(object);
     enumerableOnly && (symbols = symbols.filter(function (sym) {
       return Object.getOwnPropertyDescriptor(object, sym).enumerable;
     })), keys.push.apply(keys, symbols);
   }
+
   return keys;
 }
-function _objectSpread2(target) {
-  for (var i = 1; i < arguments.length; i++) {
-    var source = null != arguments[i] ? arguments[i] : {};
-    i % 2 ? ownKeys(Object(source), !0).forEach(function (key) {
-      _defineProperty(target, key, source[key]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)) : ownKeys(Object(source)).forEach(function (key) {
-      Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key));
-    });
-  }
-  return target;
-}
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.number.constructor.js
-var es_number_constructor = __webpack_require__("a9e3");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.map.js
-var es_array_map = __webpack_require__("d81d");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.flat.js
-var es_array_flat = __webpack_require__("0481");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.unscopables.flat.js
-var es_array_unscopables_flat = __webpack_require__("4069");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.slice.js
-var es_array_slice = __webpack_require__("fb6a");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.filter.js
-var es_array_filter = __webpack_require__("4de4");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.object.to-string.js
-var es_object_to_string = __webpack_require__("d3b7");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.for-each.js
-var es_array_for_each = __webpack_require__("4160");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/web.dom-collections.for-each.js
-var web_dom_collections_for_each = __webpack_require__("159b");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.push.js
-var es_array_push = __webpack_require__("14d9");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.sort.js
-var es_array_sort = __webpack_require__("4e82");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.some.js
-var es_array_some = __webpack_require__("45fc");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.string.trim.js
-var es_string_trim = __webpack_require__("498a");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.regexp.exec.js
-var es_regexp_exec = __webpack_require__("ac1f");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.string.replace.js
-var es_string_replace = __webpack_require__("5319");
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.every.js
-var es_array_every = __webpack_require__("a623");
-
-  if (Object.getOwnPropertySymbols) {
-    var symbols = Object.getOwnPropertySymbols(object);
-    enumerableOnly && (symbols = symbols.filter(function (sym) {
-      return Object.getOwnPropertyDescriptor(object, sym).enumerable;
-    })), keys.push.apply(keys, symbols);
-  }
-
-// EXTERNAL MODULE: ./node_modules/core-js/modules/es.array.reduce.js
-var es_array_reduce = __webpack_require__("13d5");
 
 function _objectSpread2(target) {
   for (var i = 1; i < arguments.length; i++) {
@@ -5997,9 +5269,11 @@ var createMap = function createMap() {
 // CONCATENATED MODULE: ./src/utils/quickDiff.js
 function quickDiff(arrA, arrB) {
   if (arrA.length !== arrB.length) return true;
+
   for (var i = 0; i < arrA.length; i++) {
     if (arrA[i] !== arrB[i]) return true;
   }
+
   return false;
 }
 // EXTERNAL MODULE: ./node_modules/lodash/noop.js
@@ -6010,12 +5284,15 @@ var noop_default = /*#__PURE__*/__webpack_require__.n(noop);
 
 
 
-var warning =  true ? /* istanbul ignore next */noop_default.a : undefined;
+var warning =  true ?
+/* istanbul ignore next */
+noop_default.a : undefined;
 // CONCATENATED MODULE: ./src/utils/find.js
 function find(arr, predicate, ctx) {
   for (var i = 0, len = arr.length; i < len; i++) {
     if (predicate.call(ctx, arr[i], i, arr)) return arr[i];
   }
+
   return undefined;
 }
 // CONCATENATED MODULE: ./src/utils/onLeftClick.js
@@ -6026,6 +5303,7 @@ function onLeftClick(mouseDownHandler) {
       for (var _len = arguments.length, args = new Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
         args[_key - 1] = arguments[_key];
       }
+
       mouseDownHandler.call.apply(mouseDownHandler, [this, evt].concat(args));
     }
   };
@@ -6036,6 +5314,7 @@ function scrollIntoView($scrollingEl, $focusedEl) {
   var scrollingReact = $scrollingEl.getBoundingClientRect();
   var focusedRect = $focusedEl.getBoundingClientRect();
   var overScroll = $focusedEl.offsetHeight / 3;
+
   if (focusedRect.bottom + overScroll > scrollingReact.bottom) {
     $scrollingEl.scrollTop = Math.min($focusedEl.offsetTop + $focusedEl.clientHeight - $scrollingEl.offsetHeight + overScroll, $scrollingEl.scrollHeight);
   } else if (focusedRect.top - overScroll < scrollingReact.top) {
@@ -6066,36 +5345,30 @@ function removeFromArray(arr, elem) {
 }
 // CONCATENATED MODULE: ./src/constants.js
 // Magic value that indicates a root level node.
-var NO_PARENT_NODE = null;
+var NO_PARENT_NODE = null; // Types of checked state.
 
-// Types of checked state.
 var UNCHECKED = 0;
 var INDETERMINATE = 1;
-var CHECKED = 2;
+var CHECKED = 2; // Types of count number.
 
-// Types of count number.
 var ALL_CHILDREN = 'ALL_CHILDREN';
 var ALL_DESCENDANTS = 'ALL_DESCENDANTS';
 var LEAF_CHILDREN = 'LEAF_CHILDREN';
-var LEAF_DESCENDANTS = 'LEAF_DESCENDANTS';
+var LEAF_DESCENDANTS = 'LEAF_DESCENDANTS'; // Action types of delayed loading.
 
-// Action types of delayed loading.
 var LOAD_ROOT_OPTIONS = 'LOAD_ROOT_OPTIONS';
 var LOAD_CHILDREN_OPTIONS = 'LOAD_CHILDREN_OPTIONS';
-var ASYNC_SEARCH = 'ASYNC_SEARCH';
+var ASYNC_SEARCH = 'ASYNC_SEARCH'; // Acceptable values of `valueConsistsOf` prop.
 
-// Acceptable values of `valueConsistsOf` prop.
 var ALL = 'ALL';
 var BRANCH_PRIORITY = 'BRANCH_PRIORITY';
 var LEAF_PRIORITY = 'LEAF_PRIORITY';
-var ALL_WITH_INDETERMINATE = 'ALL_WITH_INDETERMINATE';
+var ALL_WITH_INDETERMINATE = 'ALL_WITH_INDETERMINATE'; // Acceptable values of `sortValueBy` prop.
 
-// Acceptable values of `sortValueBy` prop.
 var ORDER_SELECTED = 'ORDER_SELECTED';
 var LEVEL = 'LEVEL';
-var INDEX = 'INDEX';
+var INDEX = 'INDEX'; // Key codes look-up table.
 
-// Key codes look-up table.
 var KEY_CODES = {
   BACKSPACE: 8,
   ENTER: 13,
@@ -6107,10 +5380,13 @@ var KEY_CODES = {
   ARROW_RIGHT: 39,
   ARROW_DOWN: 40,
   DELETE: 46
-};
+}; // Other constants.
 
-// Other constants.
-var INPUT_DEBOUNCE_DELAY =  false ? /* to speed up unit testing */undefined : /* istanbul ignore next */200;
+var INPUT_DEBOUNCE_DELAY =  false ?
+/* to speed up unit testing */
+undefined :
+/* istanbul ignore next */
+200;
 var MIN_INPUT_WIDTH = 5;
 var MENU_BUFFER = 40;
 // CONCATENATED MODULE: ./src/mixins/treeselectMixin.js
@@ -6141,8 +5417,10 @@ var MENU_BUFFER = 40;
 
 
 
+
 function sortValueByIndex(a, b) {
   var i = 0;
+
   do {
     if (a.level < i) return -1;
     if (b.level < i) return 1;
@@ -6150,9 +5428,11 @@ function sortValueByIndex(a, b) {
     i++;
   } while (true);
 }
+
 function sortValueByLevel(a, b) {
   return a.level === b.level ? sortValueByIndex(a, b) : a.level - b.level;
 }
+
 function createAsyncOptionsStates() {
   return {
     isLoaded: false,
@@ -6160,18 +5440,24 @@ function createAsyncOptionsStates() {
     loadingError: ''
   };
 }
+
 function stringifyOptionPropValue(value) {
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' && !isNaN_isNaN(value)) return value + '';
-  // istanbul ignore next
+  if (typeof value === 'number' && !isNaN_isNaN(value)) return value + ''; // istanbul ignore next
+
   return '';
 }
+
 function match(enableFuzzyMatch, needle, haystack) {
   return enableFuzzyMatch ? fuzzysearch_default()(needle, haystack) : includes(haystack, needle);
 }
+
 function getErrorMessage(err) {
-  return err.message || /* istanbul ignore next */String(err);
+  return err.message ||
+  /* istanbul ignore next */
+  String(err);
 }
+
 var instanceId = 0;
 /* harmony default export */ var treeselectMixin = ({
   provide: function provide() {
@@ -6189,6 +5475,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * When an ancestor node is selected/deselected, whether its disabled descendants should be selected/deselected.
      * You may want to use this in conjunction with `allowClearingDisabled` prop.
@@ -6201,6 +5488,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Whether the menu should be always open.
      */
@@ -6208,6 +5496,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Append the menu to <body />?
      */
@@ -6215,6 +5504,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Whether to enable async search mode.
      */
@@ -6222,6 +5512,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Automatically focus the component on mount?
      */
@@ -6229,6 +5520,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Automatically load root options on mount. When set to `false`, root options will be loaded when the menu is opened.
      */
@@ -6236,6 +5528,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * When user deselects a node, automatically deselect its ancestors. Applies to flat mode only.
      */
@@ -6243,6 +5536,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * When user deselects a node, automatically deselect its descendants. Applies to flat mode only.
      */
@@ -6250,6 +5544,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * When user selects a node, automatically select its ancestors. Applies to flat mode only.
      */
@@ -6257,6 +5552,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * When user selects a node, automatically select its descendants. Applies to flat mode only.
      */
@@ -6264,6 +5560,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Whether pressing backspace key removes the last item if there is no text input.
      */
@@ -6271,6 +5568,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Function that processes before clearing all input fields.
      * Return `false` to prevent value from being cleared.
@@ -6280,6 +5578,7 @@ var instanceId = 0;
       type: Function,
       default: constant_default()(true)
     },
+
     /**
      * Show branch nodes before leaf nodes?
      */
@@ -6287,6 +5586,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Should cache results of every search request?
      */
@@ -6294,6 +5594,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Show an "×" button that resets value?
      */
@@ -6301,6 +5602,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Title for the "×" button when `multiple: true`.
      */
@@ -6308,6 +5610,7 @@ var instanceId = 0;
       type: String,
       default: 'Clear all'
     },
+
     /**
      * Whether to clear the search input after selecting.
      * Use only when `multiple` is `true`.
@@ -6317,6 +5620,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Title for the "×" button.
      */
@@ -6324,6 +5628,7 @@ var instanceId = 0;
       type: String,
       default: 'Clear value'
     },
+
     /**
      * Whether to close the menu after selecting an option?
      * Use only when `multiple` is `true`.
@@ -6332,6 +5637,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * How many levels of branch nodes should be automatically expanded when loaded.
      * Set `Infinity` to make all branch nodes expanded by default.
@@ -6340,6 +5646,7 @@ var instanceId = 0;
       type: Number,
       default: 0
     },
+
     /**
      * The default set of options to show before the user starts searching. Used for async search mode.
      * When set to `true`, the results for search query as a empty string will be autoloaded.
@@ -6348,6 +5655,7 @@ var instanceId = 0;
     defaultOptions: {
       default: false
     },
+
     /**
      * Whether pressing delete key removes the last item if there is no text input.
      */
@@ -6355,6 +5663,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Delimiter to use to join multiple values for the hidden field value.
      */
@@ -6362,6 +5671,7 @@ var instanceId = 0;
       type: String,
       default: ','
     },
+
     /**
      * Only show the nodes that match the search value directly, excluding its ancestors.
      *
@@ -6371,6 +5681,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Prevent branch nodes from being selected?
      */
@@ -6378,6 +5689,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Disable the control?
      */
@@ -6385,6 +5697,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Disable the fuzzy matching functionality?
      */
@@ -6392,6 +5705,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Whether to enable flat mode or not. Non-flat mode (default) means:
      *   - Whenever a branch node gets checked, all its children will be checked too
@@ -6402,6 +5716,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Will be passed with all events as the last param.
      * Useful for identifying events origin.
@@ -6413,6 +5728,7 @@ var instanceId = 0;
       },
       type: [String, Number]
     },
+
     /**
      * Joins multiple values into a single form field with the `delimiter` (legacy mode).
     */
@@ -6420,6 +5736,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Limit the display of selected options.
      * The rest will be hidden within the limitText string.
@@ -6428,6 +5745,7 @@ var instanceId = 0;
       type: Number,
       default: Infinity
     },
+
     /**
      * Function that processes the message shown when selected elements pass the defined limit.
      * @type {function(number): string}
@@ -6439,6 +5757,7 @@ var instanceId = 0;
         return "and ".concat(count, " more");
       }
     },
+
     /**
      * Text displayed when loading options.
      */
@@ -6446,6 +5765,7 @@ var instanceId = 0;
       type: String,
       default: 'Loading...'
     },
+
     /**
      * Used for dynamically loading options.
      * @type {function({action: string, callback: (function((Error|string)=): void), parentNode: node=, instanceId}): void}
@@ -6453,6 +5773,7 @@ var instanceId = 0;
     loadOptions: {
       type: Function
     },
+
     /**
      * Which node properties to filter on.
      */
@@ -6460,6 +5781,7 @@ var instanceId = 0;
       type: Array,
       default: constant_default()(['label'])
     },
+
     /**
      * Sets `maxHeight` style value of the menu.
      */
@@ -6471,6 +5793,7 @@ var instanceId = 0;
       type: Number,
       default: 1
     },
+
     /**
      * Set `true` to allow selecting multiple options (a.k.a., multi-select mode).
      */
@@ -6478,12 +5801,14 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Generates a hidden <input /> tag with this field name for html forms.
      */
     name: {
       type: String
     },
+
     /**
      * Text displayed when a branch node has no children.
      */
@@ -6491,6 +5816,7 @@ var instanceId = 0;
       type: String,
       default: 'No sub-options.'
     },
+
     /**
      * Text displayed when there are no available options.
      */
@@ -6498,6 +5824,7 @@ var instanceId = 0;
       type: String,
       default: 'No options available.'
     },
+
     /**
      * Text displayed when there are no matching search results.
      */
@@ -6505,6 +5832,7 @@ var instanceId = 0;
       type: String,
       default: 'No results found...'
     },
+
     /**
      * Used for normalizing source data.
      * @type {function(node, instanceId): node}
@@ -6513,6 +5841,7 @@ var instanceId = 0;
       type: Function,
       default: identity_default.a
     },
+
     /**
      * By default (`auto`), the menu will open below the control. If there is not
      * enough space, vue-treeselect will automatically flip the menu.
@@ -6533,6 +5862,7 @@ var instanceId = 0;
         return includes(acceptableValues, value);
       }
     },
+
     /**
      * Whether to automatically open the menu when the control is clicked.
      */
@@ -6540,6 +5870,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Whether to automatically open the menu when the control is focused.
      */
@@ -6547,6 +5878,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Array of available options.
      * @type {node[]}
@@ -6554,6 +5886,7 @@ var instanceId = 0;
     options: {
       type: Array
     },
+
     /**
      * Field placeholder, displayed when there's no value.
      */
@@ -6561,6 +5894,7 @@ var instanceId = 0;
       type: String,
       default: 'Select...'
     },
+
     /**
      * Applies HTML5 required attribute when needed.
      */
@@ -6568,6 +5902,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Text displayed asking user whether to retry loading children options.
      */
@@ -6575,6 +5910,7 @@ var instanceId = 0;
       type: String,
       default: 'Retry?'
     },
+
     /**
      * Title for the retry button.
      */
@@ -6582,6 +5918,7 @@ var instanceId = 0;
       type: String,
       default: 'Click to retry'
     },
+
     /**
      * Enable searching feature?
      */
@@ -6589,6 +5926,7 @@ var instanceId = 0;
       type: Boolean,
       default: true
     },
+
     /**
      * Search in ancestor nodes too.
      */
@@ -6596,6 +5934,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Text tip to prompt for async search.
      */
@@ -6603,6 +5942,7 @@ var instanceId = 0;
       type: String,
       default: 'Type to search...'
     },
+
     /**
      * Whether to show a children count next to the label of each branch node.
      */
@@ -6610,6 +5950,7 @@ var instanceId = 0;
       type: Boolean,
       default: false
     },
+
     /**
      * Used in conjunction with `showCount` to specify which type of count number should be displayed.
      * Acceptable values:
@@ -6626,12 +5967,14 @@ var instanceId = 0;
         return includes(acceptableValues, value);
       }
     },
+
     /**
      * Whether to show children count when searching.
      * Fallbacks to the value of `showCount` when not specified.
      * @type {boolean}
      */
     showCountOnSearch: null,
+
     /**
      * In which order the selected options should be displayed in trigger & sorted in `value` array.
      * Used for multi-select mode only.
@@ -6648,6 +5991,7 @@ var instanceId = 0;
         return includes(acceptableValues, value);
       }
     },
+
     /**
      * Tab index of the control.
      */
@@ -6655,6 +5999,7 @@ var instanceId = 0;
       type: Number,
       default: 0
     },
+
     /**
      * The value of the control.
      * Should be `id` or `node` object for single-select mode, or an array of `id` or `node` object for multi-select mode.
@@ -6663,6 +6008,7 @@ var instanceId = 0;
      * @type {?Array}
      */
     modelValue: null,
+
     /**
      * Which kind of nodes should be included in the `value` array in multi-select mode.
      * Acceptable values:
@@ -6679,6 +6025,7 @@ var instanceId = 0;
         return includes(acceptableValues, value);
       }
     },
+
     /**
      * Format of `value` prop.
      * Note that, when set to `"object"`, only `id` & `label` properties are required in each `node` object in `value` prop.
@@ -6690,6 +6037,7 @@ var instanceId = 0;
       type: String,
       default: 'id'
     },
+
     /**
      * z-index of the menu.
      */
@@ -6746,6 +6094,7 @@ var instanceId = 0;
   },
   computed: {
     /* eslint-disable valid-jsdoc */
+
     /**
      * Normalized nodes that have been selected.
      * @type {node[]}
@@ -6753,31 +6102,35 @@ var instanceId = 0;
     selectedNodes: function selectedNodes() {
       return this.forest.selectedNodeIds.map(this.getNode);
     },
+
     /**
      * Id list of selected nodes with `sortValueBy` prop applied.
      * @type {nodeId[]}
      */
     internalValue: function internalValue() {
       var _this = this;
-      var internalValue;
 
-      // istanbul ignore else
+      var internalValue; // istanbul ignore else
+
       if (this.single || this.flat || this.disableBranchNodes || this.valueConsistsOf === ALL) {
         internalValue = this.forest.selectedNodeIds.slice();
       } else if (this.valueConsistsOf === BRANCH_PRIORITY) {
         internalValue = this.forest.selectedNodeIds.filter(function (id) {
           var node = _this.getNode(id);
+
           if (node.isRootNode) return true;
           return !_this.isSelected(node.parentNode);
         });
       } else if (this.valueConsistsOf === LEAF_PRIORITY) {
         internalValue = this.forest.selectedNodeIds.filter(function (id) {
           var node = _this.getNode(id);
+
           if (node.isLeaf) return true;
           return node.children.length === 0;
         });
       } else if (this.valueConsistsOf === ALL_WITH_INDETERMINATE) {
         var _internalValue;
+
         var indeterminateNodeIds = [];
         internalValue = this.forest.selectedNodeIds.slice();
         this.selectedNodes.forEach(function (selectedNode) {
@@ -6787,8 +6140,10 @@ var instanceId = 0;
             indeterminateNodeIds.push(ancestor.id);
           });
         });
+
         (_internalValue = internalValue).push.apply(_internalValue, indeterminateNodeIds);
       }
+
       if (this.sortValueBy === LEVEL) {
         internalValue.sort(function (a, b) {
           return sortValueByLevel(_this.getNode(a), _this.getNode(b));
@@ -6798,8 +6153,10 @@ var instanceId = 0;
           return sortValueByIndex(_this.getNode(a), _this.getNode(b));
         });
       }
+
       return internalValue;
     },
+
     /**
      * Has any option been selected?
      * @type {boolean}
@@ -6807,6 +6164,7 @@ var instanceId = 0;
     hasValue: function hasValue() {
       return this.internalValue.length > 0;
     },
+
     /**
      * Single-select mode?
      * @type {boolean}
@@ -6814,6 +6172,7 @@ var instanceId = 0;
     single: function single() {
       return !this.multiple;
     },
+
     /**
      * Id list of nodes displayed in the menu. Nodes that are considered NOT visible:
      *   - descendants of a collapsed branch node
@@ -6824,18 +6183,21 @@ var instanceId = 0;
      */
     visibleOptionIds: function visibleOptionIds() {
       var _this2 = this;
+
       var visibleOptionIds = [];
       this.traverseAllNodesByIndex(function (node) {
         if (!_this2.localSearch.active || _this2.shouldOptionBeIncludedInSearchResult(node)) {
           visibleOptionIds.push(node.id);
-        }
-        // Skip the traversal of descendants of a branch node if it's not expanded.
+        } // Skip the traversal of descendants of a branch node if it's not expanded.
+
+
         if (node.isBranch && !_this2.shouldExpand(node)) {
           return false;
         }
       });
       return visibleOptionIds;
     },
+
     /**
      * Has any option should be displayed in the menu?
      * @type {boolean}
@@ -6843,6 +6205,7 @@ var instanceId = 0;
     hasVisibleOptions: function hasVisibleOptions() {
       return this.visibleOptionIds.length !== 0;
     },
+
     /**
      * Should show children count when searching?
      * @type {boolean}
@@ -6853,6 +6216,7 @@ var instanceId = 0;
       // https://github.com/vuejs/vue/issues/6358
       return typeof this.showCountOnSearch === 'boolean' ? this.showCountOnSearch : this.showCount;
     },
+
     /**
      * Is there any branch node?
      * @type {boolean}
@@ -6864,7 +6228,9 @@ var instanceId = 0;
     },
     shouldFlattenOptions: function shouldFlattenOptions() {
       return this.localSearch.active && this.flattenSearchResults;
-    } /* eslint-enable valid-jsdoc */
+    }
+    /* eslint-enable valid-jsdoc */
+
   },
   watch: {
     alwaysOpen: function alwaysOpen(newValue) {
@@ -6881,14 +6247,23 @@ var instanceId = 0;
       this.initialize();
     },
     internalValue: function internalValue(newValue, oldValue) {
-      var hasChanged = quickDiff(newValue, oldValue);
-      // #122
+      var hasChanged = quickDiff(newValue, oldValue); // #122
       // Vue would trigger this watcher when `newValue` and `oldValue` are shallow-equal.
       // We emit the `input` event only when the value actually changes.
+
       if (hasChanged) this.$emit('update:modelValue', this.getValue(), this.getInstanceId());
     },
     matchKeys: function matchKeys() {
       this.initialize();
+    },
+    modelValue: {
+      deep: true,
+      handler: function handler() {
+        var nodeIdsFromValue = this.extractCheckedNodeIdsFromValue();
+        var hasChanged = quickDiff(nodeIdsFromValue, this.internalValue);
+        if (!hasChanged) return;
+        this.fixSelectedNodeIds(nodeIdsFromValue);
+      }
     },
     multiple: function multiple(newValue) {
       // We need to rebuild the state when switching from single-select mode
@@ -6898,8 +6273,8 @@ var instanceId = 0;
     },
     options: {
       handler: function handler() {
-        if (this.async) return;
-        // Re-initialize options when the `options` prop has changed.
+        if (this.async) return; // Re-initialize options when the `options` prop has changed.
+
         this.initialize();
         this.rootOptionsStates.isLoaded = Array.isArray(this.options);
       },
@@ -6912,22 +6287,20 @@ var instanceId = 0;
       } else {
         this.handleLocalSearch();
       }
+
       this.$emit('search-change', this.trigger.searchQuery, this.getInstanceId());
-    },
-    value: function value() {
-      var nodeIdsFromValue = this.extractCheckedNodeIdsFromValue();
-      var hasChanged = quickDiff(nodeIdsFromValue, this.internalValue);
-      if (hasChanged) this.fixSelectedNodeIds(nodeIdsFromValue);
     }
   },
   methods: {
     verifyProps: function verifyProps() {
       var _this3 = this;
+
       warning(function () {
         return _this3.async ? _this3.searchable : true;
       }, function () {
         return 'For async search mode, the value of "searchable" prop must be true.';
       });
+
       if (this.options == null && !this.loadOptions) {
         warning(function () {
           return false;
@@ -6935,6 +6308,7 @@ var instanceId = 0;
           return 'Are you meant to dynamically load options? You need to use "loadOptions" prop.';
         });
       }
+
       if (this.flat) {
         warning(function () {
           return _this3.multiple;
@@ -6942,6 +6316,7 @@ var instanceId = 0;
           return 'You are using flat mode. But you forgot to add "multiple=true"?';
         });
       }
+
       if (!this.flat) {
         var propNames = ['autoSelectAncestors', 'autoSelectDescendants', 'autoDeselectAncestors', 'autoDeselectDescendants'];
         propNames.forEach(function (propName) {
@@ -6958,18 +6333,19 @@ var instanceId = 0;
     },
     initialize: function initialize() {
       var options = this.async ? this.getRemoteSearchEntry().options : this.options;
+
       if (Array.isArray(options)) {
         // In case we are re-initializing options, keep the old state tree temporarily.
         var prevNodeMap = this.forest.nodeMap;
         this.forest.nodeMap = createMap();
         this.keepDataOfSelectedNodes(prevNodeMap);
-        this.forest.normalizedOptions = this.normalize(NO_PARENT_NODE, options, prevNodeMap);
-        // Cases that need fixing `selectedNodeIds`:
+        this.forest.normalizedOptions = this.normalize(NO_PARENT_NODE, options, prevNodeMap); // Cases that need fixing `selectedNodeIds`:
         //   1) Children options of a checked node have been delayed loaded,
         //      we should also mark these children as checked. (multi-select mode)
         //   2) Root options have been delayed loaded, we need to initialize states
         //      of these nodes. (multi-select mode)
         //   3) Async search mode.
+
         this.fixSelectedNodeIds(this.internalValue);
       } else {
         this.forest.normalizedOptions = [];
@@ -6980,9 +6356,11 @@ var instanceId = 0;
     },
     getValue: function getValue() {
       var _this4 = this;
+
       if (this.valueFormat === 'id') {
         return this.multiple ? this.internalValue.slice() : this.internalValue[0];
       }
+
       var rawNodes = this.internalValue.map(function (id) {
         return _this4.getNode(id).raw;
       });
@@ -7001,7 +6379,6 @@ var instanceId = 0;
       // In case there is a default selected node that is not loaded into the tree yet,
       // we create a fallback node to keep the component working.
       // When the real data is loaded, we'll override this fake node.
-
       var raw = this.extractNodeFromValue(id);
       var label = this.enhancedNormalizer(raw).label || "".concat(id, " (unknown)");
       var fallbackNode = {
@@ -7020,15 +6397,17 @@ var instanceId = 0;
         level: 0,
         raw: raw
       };
-      return this.forest.nodeMap[id] = fallbackNode;
-      // return this.$ set(this.forest.nodeMap, id, fallbackNode)
+      return this.forest.nodeMap[id] = fallbackNode; // return this.$ set(this.forest.nodeMap, id, fallbackNode)
     },
     extractCheckedNodeIdsFromValue: function extractCheckedNodeIdsFromValue() {
       var _this5 = this;
+
       if (this.modelValue == null) return [];
+
       if (this.valueFormat === 'id') {
         return this.multiple ? this.modelValue.slice() : [this.modelValue];
       }
+
       return (this.multiple ? this.modelValue : [this.modelValue]).map(function (node) {
         return _this5.enhancedNormalizer(node);
       }).map(function (node) {
@@ -7037,12 +6416,15 @@ var instanceId = 0;
     },
     extractNodeFromValue: function extractNodeFromValue(id) {
       var _this6 = this;
+
       var defaultNode = {
         id: id
       };
+
       if (this.valueFormat === 'id') {
         return defaultNode;
       }
+
       var valueArray = this.multiple ? Array.isArray(this.modelValue) ? this.modelValue : [] : this.modelValue ? [this.modelValue] : [];
       var matched = find(valueArray, function (node) {
         return node && _this6.enhancedNormalizer(node).id === id;
@@ -7051,15 +6433,17 @@ var instanceId = 0;
     },
     fixSelectedNodeIds: function fixSelectedNodeIds(nodeIdListOfPrevValue) {
       var _this7 = this;
-      var nextSelectedNodeIds = [];
 
-      // istanbul ignore else
+      var nextSelectedNodeIds = []; // istanbul ignore else
+
       if (this.single || this.flat || this.disableBranchNodes || this.valueConsistsOf === ALL) {
         nextSelectedNodeIds = nodeIdListOfPrevValue;
       } else if (this.valueConsistsOf === BRANCH_PRIORITY) {
         nodeIdListOfPrevValue.forEach(function (nodeId) {
           nextSelectedNodeIds.push(nodeId);
+
           var node = _this7.getNode(nodeId);
+
           if (node.isBranch) _this7.traverseDescendantsBFS(node, function (descendant) {
             nextSelectedNodeIds.push(descendant.id);
           });
@@ -7067,6 +6451,7 @@ var instanceId = 0;
       } else if (this.valueConsistsOf === LEAF_PRIORITY) {
         var map = createMap();
         var queue = nodeIdListOfPrevValue.slice();
+
         while (queue.length) {
           var nodeId = queue.shift();
           var node = this.getNode(nodeId);
@@ -7077,36 +6462,45 @@ var instanceId = 0;
         }
       } else if (this.valueConsistsOf === ALL_WITH_INDETERMINATE) {
         var _map = createMap();
+
         var _queue = nodeIdListOfPrevValue.filter(function (nodeId) {
           var node = _this7.getNode(nodeId);
+
           return node.isLeaf || node.children.length === 0;
         });
+
         while (_queue.length) {
           var _nodeId = _queue.shift();
+
           var _node = this.getNode(_nodeId);
+
           nextSelectedNodeIds.push(_nodeId);
           if (_node.isRootNode) continue;
           if (!(_node.parentNode.id in _map)) _map[_node.parentNode.id] = _node.parentNode.children.length;
           if (--_map[_node.parentNode.id] === 0) _queue.push(_node.parentNode.id);
         }
       }
-      var hasChanged = quickDiff(this.forest.selectedNodeIds, nextSelectedNodeIds);
-      // If `nextSelectedNodeIds` doesn't actually differ from old `selectedNodeIds`,
+
+      var hasChanged = quickDiff(this.forest.selectedNodeIds, nextSelectedNodeIds); // If `nextSelectedNodeIds` doesn't actually differ from old `selectedNodeIds`,
       // we don't make the assignment to avoid triggering its watchers which may cause
       // unnecessary calculations.
+
       if (hasChanged) this.forest.selectedNodeIds = nextSelectedNodeIds;
       this.buildForestState();
     },
     keepDataOfSelectedNodes: function keepDataOfSelectedNodes(prevNodeMap) {
       var _this8 = this;
+
       // In case there is any selected node that is not present in the new `options` array.
       // It could be useful for async search mode.
       this.forest.selectedNodeIds.forEach(function (id) {
         if (!prevNodeMap[id]) return;
+
         var node = _objectSpread2(_objectSpread2({}, prevNodeMap[id]), {}, {
           isFallbackNode: true
-        });
-        // this.$ set(this.forest.nodeMap, id, node)
+        }); // this.$ set(this.forest.nodeMap, id, node)
+
+
         _this8.forest.nodeMap[id] = node;
       });
     },
@@ -7118,6 +6512,7 @@ var instanceId = 0;
       // istanbul ignore if
       if (!parentNode.isBranch) return;
       var queue = parentNode.children.slice();
+
       while (queue.length) {
         var currNode = queue[0];
         if (currNode.isBranch) queue.push.apply(queue, _toConsumableArray(currNode.children));
@@ -7127,18 +6522,22 @@ var instanceId = 0;
     },
     traverseDescendantsDFS: function traverseDescendantsDFS(parentNode, callback) {
       var _this9 = this;
+
       if (!parentNode.isBranch) return;
       parentNode.children.forEach(function (child) {
         // deep-level node first
         _this9.traverseDescendantsDFS(child, callback);
+
         callback(child);
       });
     },
     traverseAllNodesDFS: function traverseAllNodesDFS(callback) {
       var _this10 = this;
+
       this.forest.normalizedOptions.forEach(function (rootNode) {
         // deep-level node first
         _this10.traverseDescendantsDFS(rootNode, callback);
+
         callback(rootNode);
       });
     },
@@ -7149,10 +6548,10 @@ var instanceId = 0;
             walk(child);
           }
         });
-      };
-
-      // To simplify the code logic of traversal,
+      }; // To simplify the code logic of traversal,
       // we create a fake root node that holds all the root options.
+
+
       walk({
         children: this.forest.normalizedOptions
       });
@@ -7181,15 +6580,18 @@ var instanceId = 0;
       evt.stopPropagation();
       if (this.disabled) return;
       var isClickedOnValueContainer = this.getValueContainer().$el.contains(evt.target);
+
       if (isClickedOnValueContainer && !this.menu.isOpen && (this.openOnClick || this.trigger.isFocused)) {
         this.openMenu();
       }
+
       if (this._blurOnSelect) {
         this.blurInput();
       } else {
         // Focus the input or prevent blurring.
         this.focusInput();
       }
+
       this.resetFlags();
     }),
     handleClickOutside: function handleClickOutside(evt) {
@@ -7201,31 +6603,32 @@ var instanceId = 0;
     },
     handleLocalSearch: function handleLocalSearch() {
       var _this11 = this;
+
       var searchQuery = this.trigger.searchQuery;
+
       var done = function done() {
         return _this11.resetHighlightedOptionWhenNecessary(true);
       };
+
       if (!searchQuery) {
         // Exit sync search mode.
         this.localSearch.active = false;
         return done();
-      }
+      } // Enter sync search mode.
 
-      // Enter sync search mode.
-      this.localSearch.active = true;
 
-      // Reset states.
+      this.localSearch.active = true; // Reset states.
+
       this.localSearch.noResults = true;
       this.traverseAllNodesDFS(function (node) {
         if (node.isBranch) {
           var _this11$localSearch$c;
+
           node.isExpandedOnSearch = false;
           node.showAllChildrenOnSearch = false;
           node.isMatched = false;
           node.hasMatchedDescendants = false;
-          _this11.localSearch.countMap[node.id] = (_this11$localSearch$c = {}, _defineProperty(_this11$localSearch$c, ALL_CHILDREN, 0), _defineProperty(_this11$localSearch$c, ALL_DESCENDANTS, 0), _defineProperty(_this11$localSearch$c, LEAF_CHILDREN, 0), _defineProperty(_this11$localSearch$c, LEAF_DESCENDANTS, 0), _this11$localSearch$c);
-
-          // this.$ set(this.localSearch.countMap, node.id, {
+          _this11.localSearch.countMap[node.id] = (_this11$localSearch$c = {}, _defineProperty(_this11$localSearch$c, ALL_CHILDREN, 0), _defineProperty(_this11$localSearch$c, ALL_DESCENDANTS, 0), _defineProperty(_this11$localSearch$c, LEAF_CHILDREN, 0), _defineProperty(_this11$localSearch$c, LEAF_DESCENDANTS, 0), _this11$localSearch$c); // this.$ set(this.localSearch.countMap, node.id, {
           //   [ALL_CHILDREN]: 0,
           //   [ALL_DESCENDANTS]: 0,
           //   [LEAF_CHILDREN]: 0,
@@ -7233,7 +6636,6 @@ var instanceId = 0;
           // })
         }
       });
-
       var lowerCasedSearchQuery = searchQuery.trim().toLocaleLowerCase();
       var splitSearchQuery = lowerCasedSearchQuery.replace(/\s+/g, ' ').split(' ');
       this.traverseAllNodesDFS(function (node) {
@@ -7246,6 +6648,7 @@ var instanceId = 0;
             return match(!_this11.disableFuzzyMatching, lowerCasedSearchQuery, node.lowerCased[matchKey]);
           });
         }
+
         if (node.isMatched) {
           _this11.localSearch.noResults = false;
           node.ancestors.forEach(function (ancestor) {
@@ -7254,12 +6657,14 @@ var instanceId = 0;
           if (node.isLeaf) node.ancestors.forEach(function (ancestor) {
             return _this11.localSearch.countMap[ancestor.id][LEAF_DESCENDANTS]++;
           });
+
           if (node.parentNode !== NO_PARENT_NODE) {
-            _this11.localSearch.countMap[node.parentNode.id][ALL_CHILDREN] += 1;
-            // istanbul ignore else
+            _this11.localSearch.countMap[node.parentNode.id][ALL_CHILDREN] += 1; // istanbul ignore else
+
             if (node.isLeaf) _this11.localSearch.countMap[node.parentNode.id][LEAF_CHILDREN] += 1;
           }
         }
+
         if ((node.isMatched || node.isBranch && node.isExpandedOnSearch) && node.parentNode !== NO_PARENT_NODE) {
           node.parentNode.isExpandedOnSearch = true;
           node.parentNode.hasMatchedDescendants = true;
@@ -7269,17 +6674,23 @@ var instanceId = 0;
     },
     handleRemoteSearch: function handleRemoteSearch() {
       var _this12 = this;
+
       var searchQuery = this.trigger.searchQuery;
+
       var _this66 = this;
+
       var entry = this.getRemoteSearchEntry();
+
       var done = function done() {
         _this12.initialize();
+
         _this12.resetHighlightedOptionWhenNecessary(true);
       };
-      console.log(searchQuery, this.minChar);
+
       if ((searchQuery === "" && this.minChar > 0 || this.cacheOptions) && entry.isLoaded) {
         return done();
       }
+
       if (searchQuery.length >= this.minChar) {
         this.callLoadOptionsProp({
           action: ASYNC_SEARCH,
@@ -7296,9 +6707,9 @@ var instanceId = 0;
           },
           succeed: function succeed(options) {
             entry.isLoaded = true;
-            entry.options = options;
-            // When the request completes, the search query may have changed.
+            entry.options = options; // When the request completes, the search query may have changed.
             // We only show these options if they are for the current search query.
+
             if (_this12.trigger.searchQuery === searchQuery) done();
           },
           fail: function fail(err) {
@@ -7313,12 +6724,14 @@ var instanceId = 0;
     },
     getRemoteSearchEntry: function getRemoteSearchEntry() {
       var _this13 = this;
+
       var searchQuery = this.trigger.searchQuery;
+
       var entry = this.remoteSearch[searchQuery] || _objectSpread2(_objectSpread2({}, createAsyncOptionsStates()), {}, {
         options: []
-      });
+      }); // Vue doesn't support directly watching on objects.
 
-      // Vue doesn't support directly watching on objects.
+
       this.$watch(function () {
         return entry.options;
       }, function () {
@@ -7327,6 +6740,7 @@ var instanceId = 0;
       }, {
         deep: true
       });
+
       if (searchQuery === '' && this.minChar > 0) {
         if (Array.isArray(this.defaultOptions)) {
           entry.options = this.defaultOptions;
@@ -7337,10 +6751,12 @@ var instanceId = 0;
           return entry;
         }
       }
+
       if (!this.remoteSearch[searchQuery]) {
         // this.$ set(this.remoteSearch, searchQuery, entry)
         this.remoteSearch[searchQuery] = entry;
       }
+
       return entry;
     },
     shouldExpand: function shouldExpand(node) {
@@ -7348,19 +6764,20 @@ var instanceId = 0;
     },
     shouldOptionBeIncludedInSearchResult: function shouldOptionBeIncludedInSearchResult(node) {
       // 1) This option is matched.
-      if (node.isMatched) return true;
-      // 2) This option is not matched, but has matched descendant(s).
-      if (node.isBranch && node.hasMatchedDescendants && !this.flattenSearchResults) return true;
-      // 3) This option's parent has no matched descendants,
+      if (node.isMatched) return true; // 2) This option is not matched, but has matched descendant(s).
+
+      if (node.isBranch && node.hasMatchedDescendants && !this.flattenSearchResults) return true; // 3) This option's parent has no matched descendants,
       //    but after being expanded, all its children should be shown.
-      if (!node.isRootNode && node.parentNode.showAllChildrenOnSearch) return true;
-      // 4) The default case.
+
+      if (!node.isRootNode && node.parentNode.showAllChildrenOnSearch) return true; // 4) The default case.
+
       return false;
     },
     shouldShowOptionInMenu: function shouldShowOptionInMenu(node) {
       if (this.localSearch.active && !this.shouldOptionBeIncludedInSearchResult(node)) {
         return false;
       }
+
       return true;
     },
     getControl: function getControl() {
@@ -7373,21 +6790,26 @@ var instanceId = 0;
     },
     setCurrentHighlightedOption: function setCurrentHighlightedOption(node) {
       var _this14 = this;
+
       var scroll = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : true;
       var prev = this.menu.current;
+
       if (prev != null && prev in this.forest.nodeMap) {
         this.forest.nodeMap[prev].isHighlighted = false;
       }
+
       this.menu.current = node.id;
       node.isHighlighted = true;
+
       if (this.menu.isOpen && scroll) {
         var scrollToOption = function scrollToOption() {
           var $menu = _this14.getMenu();
+
           var $option = $menu.querySelector(".vue-treeselect__option[data-id=\"".concat(node.id, "\"]"));
           if ($option) scrollIntoView($menu, $option);
-        };
+        }; // In case `openMenu()` is just called and the menu is not rendered yet.
 
-        // In case `openMenu()` is just called and the menu is not rendered yet.
+
         if (this.getMenu()) {
           scrollToOption();
         } else {
@@ -7399,6 +6821,7 @@ var instanceId = 0;
     resetHighlightedOptionWhenNecessary: function resetHighlightedOptionWhenNecessary() {
       var forceReset = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : false;
       var current = this.menu.current;
+
       if (forceReset || current == null || !(current in this.forest.nodeMap) || !this.shouldShowOptionInMenu(this.getNode(current))) {
         this.highlightFirstOption();
       }
@@ -7442,7 +6865,6 @@ var instanceId = 0;
       this.$nextTick(this.resetHighlightedOptionWhenNecessary);
       this.$nextTick(this.restoreMenuScrollPosition);
       if (!this.options && !this.async) this.loadRootOptions();
-      console.log(this.minChar);
       if (this.minChar == 0 && this.async) this.handleRemoteSearch();
       this.toggleClickOutsideEvent(true);
       this.$emit('open', this.getInstanceId());
@@ -7456,30 +6878,35 @@ var instanceId = 0;
     },
     toggleExpanded: function toggleExpanded(node) {
       var nextState;
+
       if (this.localSearch.active) {
         nextState = node.isExpandedOnSearch = !node.isExpandedOnSearch;
         if (nextState) node.showAllChildrenOnSearch = true;
       } else {
         nextState = node.isExpanded = !node.isExpanded;
       }
+
       if (nextState && !node.childrenStates.isLoaded) {
         this.loadChildrenOptions(node);
       }
     },
     buildForestState: function buildForestState() {
       var _this15 = this;
+
       var selectedNodeMap = createMap();
       this.forest.selectedNodeIds.forEach(function (selectedNodeId) {
         selectedNodeMap[selectedNodeId] = true;
       });
       this.forest.selectedNodeMap = selectedNodeMap;
       var checkedStateMap = createMap();
+
       if (this.multiple) {
         this.traverseAllNodesByIndex(function (node) {
           checkedStateMap[node.id] = UNCHECKED;
         });
         this.selectedNodes.forEach(function (selectedNode) {
           checkedStateMap[selectedNode.id] = CHECKED;
+
           if (!_this15.flat && !_this15.disableBranchNodes) {
             selectedNode.ancestors.forEach(function (ancestorNode) {
               if (!_this15.isSelected(ancestorNode)) {
@@ -7489,6 +6916,7 @@ var instanceId = 0;
           }
         });
       }
+
       this.forest.checkedStateMap = checkedStateMap;
     },
     enhancedNormalizer: function enhancedNormalizer(raw) {
@@ -7496,31 +6924,36 @@ var instanceId = 0;
     },
     normalize: function normalize(parentNode, nodes, prevNodeMap) {
       var _this16 = this;
+
       var normalizedOptions = nodes.map(function (node) {
         return [_this16.enhancedNormalizer(node), node];
       }).map(function (_ref, index) {
         var _ref2 = _slicedToArray(_ref, 2),
-          node = _ref2[0],
-          raw = _ref2[1];
+            node = _ref2[0],
+            raw = _ref2[1];
+
         _this16.checkDuplication(node);
+
         _this16.verifyNodeShape(node);
+
         var id = node.id,
-          label = node.label,
-          children = node.children,
-          isDefaultExpanded = node.isDefaultExpanded,
-          canSelectChildrenEvenIfDisabled = node.canSelectChildrenEvenIfDisabled;
+            label = node.label,
+            children = node.children,
+            isDefaultExpanded = node.isDefaultExpanded,
+            canSelectChildrenEvenIfDisabled = node.canSelectChildrenEvenIfDisabled;
         var isRootNode = parentNode === NO_PARENT_NODE;
         var level = isRootNode ? 0 : parentNode.level + 1;
         var isBranch = Array.isArray(children) || children === null;
         var isLeaf = !isBranch;
         var isDisabled = !!node.isDisabled || !_this16.flat && !isRootNode && parentNode.isDisabled && !parentNode.canSelectChildrenEvenIfDisabled;
         var isNew = !!node.isNew;
+
         var lowerCased = _this16.matchKeys.reduce(function (prev, key) {
           return _objectSpread2(_objectSpread2({}, prev), {}, _defineProperty({}, key, stringifyOptionPropValue(node[key]).toLocaleLowerCase()));
         }, {});
-        var nestedSearchLabel = isRootNode ? lowerCased.label : parentNode.nestedSearchLabel + ' ' + lowerCased.label;
 
-        // this.$ set(this.forest.nodeMap, id, createMap())
+        var nestedSearchLabel = isRootNode ? lowerCased.label : parentNode.nestedSearchLabel + ' ' + lowerCased.label; // this.$ set(this.forest.nodeMap, id, createMap())
+
         _this16.forest.nodeMap[id] = createMap();
         var normalized = _this16.forest.nodeMap[id];
         normalized.id = id;
@@ -7539,9 +6972,7 @@ var instanceId = 0;
         normalized.isBranch = isBranch;
         normalized.isLeaf = isLeaf;
         normalized.isRootNode = isRootNode;
-        normalized.raw = raw;
-
-        // this.$ set(normalized, 'id', id)
+        normalized.raw = raw; // this.$ set(normalized, 'id', id)
         // this.$ set(normalized, 'label', label)
         // this.$ set(normalized, 'level', level)
         // this.$ set(normalized, 'ancestors', isRootNode ? [] : [ parentNode ].concat(parentNode.ancestors))
@@ -7560,22 +6991,19 @@ var instanceId = 0;
 
         if (isBranch) {
           var _normalized$count;
-          var isLoaded = Array.isArray(children);
 
-          // this.$ set(normalized, 'childrenStates', {
+          var isLoaded = Array.isArray(children); // this.$ set(normalized, 'childrenStates', {
           //   ...createAsyncOptionsStates(),
           //   isLoaded,
           // })
+
           normalized.childrenStates = _objectSpread2(_objectSpread2({}, createAsyncOptionsStates()), {}, {
             isLoaded: isLoaded
-          });
-
-          // this.$ set(normalized, 'isExpanded', typeof isDefaultExpanded === 'boolean'
+          }); // this.$ set(normalized, 'isExpanded', typeof isDefaultExpanded === 'boolean'
           //   ? isDefaultExpanded
           //   : level < this.defaultExpandLevel)
-          normalized.isExpanded = typeof isDefaultExpanded === 'boolean' ? isDefaultExpanded : level < _this16.defaultExpandLevel;
 
-          // this.$ set(normalized, 'hasMatchedDescendants', false)
+          normalized.isExpanded = typeof isDefaultExpanded === 'boolean' ? isDefaultExpanded : level < _this16.defaultExpandLevel; // this.$ set(normalized, 'hasMatchedDescendants', false)
           // this.$ set(normalized, 'hasDisabledDescendants', false)
           // this.$ set(normalized, 'isExpandedOnSearch', false)
           // this.$ set(normalized, 'showAllChildrenOnSearch', false)
@@ -7588,19 +7016,20 @@ var instanceId = 0;
           // this.$ set(normalized, 'children', isLoaded
           //   ? this.normalize(normalized, children, prevNodeMap)
           //   : [])
+
           normalized.hasMatchedDescendants = false;
           normalized.hasDisabledDescendants = false;
           normalized.isExpandedOnSearch = false;
           normalized.showAllChildrenOnSearch = false;
-          normalized.count = (_normalized$count = {}, _defineProperty(_normalized$count, ALL_CHILDREN, 0), _defineProperty(_normalized$count, ALL_DESCENDANTS, 0), _defineProperty(_normalized$count, LEAF_CHILDREN, 0), _defineProperty(_normalized$count, LEAF_DESCENDANTS, 0), _normalized$count);
-
-          // this.$ set(normalized, 'children', isLoaded
+          normalized.count = (_normalized$count = {}, _defineProperty(_normalized$count, ALL_CHILDREN, 0), _defineProperty(_normalized$count, ALL_DESCENDANTS, 0), _defineProperty(_normalized$count, LEAF_CHILDREN, 0), _defineProperty(_normalized$count, LEAF_DESCENDANTS, 0), _normalized$count); // this.$ set(normalized, 'children', isLoaded
           //   ? this.normalize(normalized, children, prevNodeMap)
           //   : [])
+
           normalized.children = isLoaded ? _this16.normalize(normalized, children, prevNodeMap) : [];
           if (isDefaultExpanded === true) normalized.ancestors.forEach(function (ancestor) {
             ancestor.isExpanded = true;
           });
+
           if (!isLoaded && typeof _this16.loadOptions !== 'function') {
             warning(function () {
               return false;
@@ -7611,42 +7040,46 @@ var instanceId = 0;
             _this16.loadChildrenOptions(normalized);
           }
         }
+
         normalized.ancestors.forEach(function (ancestor) {
           return ancestor.count[ALL_DESCENDANTS]++;
         });
         if (isLeaf) normalized.ancestors.forEach(function (ancestor) {
           return ancestor.count[LEAF_DESCENDANTS]++;
         });
+
         if (!isRootNode) {
           parentNode.count[ALL_CHILDREN] += 1;
           if (isLeaf) parentNode.count[LEAF_CHILDREN] += 1;
           if (isDisabled) parentNode.hasDisabledDescendants = true;
-        }
+        } // Preserve previous states.
 
-        // Preserve previous states.
+
         if (prevNodeMap && prevNodeMap[id]) {
           var prev = prevNodeMap[id];
           normalized.isMatched = prev.isMatched;
           normalized.showAllChildrenOnSearch = prev.showAllChildrenOnSearch;
           normalized.isHighlighted = prev.isHighlighted;
+
           if (prev.isBranch && normalized.isBranch) {
             normalized.isExpanded = prev.isExpanded;
-            normalized.isExpandedOnSearch = prev.isExpandedOnSearch;
-            // #97
+            normalized.isExpandedOnSearch = prev.isExpandedOnSearch; // #97
             // If `isLoaded` was true, but IS NOT now, we consider this branch node
             // to be reset to unloaded state by the user of this component.
+
             if (prev.childrenStates.isLoaded && !normalized.childrenStates.isLoaded) {
               // Make sure the node is collapsed, then the user can load its
               // children again (by expanding).
-              normalized.isExpanded = false;
-              // We have reset `childrenStates` and don't want to preserve states here.
+              normalized.isExpanded = false; // We have reset `childrenStates` and don't want to preserve states here.
             } else {
               normalized.childrenStates = _objectSpread2({}, prev.childrenStates);
             }
           }
         }
+
         return normalized;
       });
+
       if (this.branchNodesFirst) {
         var branchNodes = normalizedOptions.filter(function (option) {
           return option.isBranch;
@@ -7656,10 +7089,12 @@ var instanceId = 0;
         });
         normalizedOptions = branchNodes.concat(leafNodes);
       }
+
       return normalizedOptions;
     },
     loadRootOptions: function loadRootOptions() {
       var _this17 = this;
+
       this.callLoadOptionsProp({
         action: LOAD_ROOT_OPTIONS,
         isPending: function isPending() {
@@ -7670,8 +7105,8 @@ var instanceId = 0;
           _this17.rootOptionsStates.loadingError = '';
         },
         succeed: function succeed() {
-          _this17.rootOptionsStates.isLoaded = true;
-          // Wait for `options` being re-initialized.
+          _this17.rootOptionsStates.isLoaded = true; // Wait for `options` being re-initialized.
+
           _this17.$nextTick(function () {
             _this17.resetHighlightedOptionWhenNecessary(true);
           });
@@ -7686,11 +7121,11 @@ var instanceId = 0;
     },
     loadChildrenOptions: function loadChildrenOptions(parentNode) {
       var _this18 = this;
+
       // The options may be re-initialized anytime during the loading process.
       // So `parentNode` can be stale and we use `getNode()` to avoid that.
-
       var id = parentNode.id,
-        raw = parentNode.raw;
+          raw = parentNode.raw;
       this.callLoadOptionsProp({
         action: LOAD_CHILDREN_OPTIONS,
         args: {
@@ -7720,15 +7155,17 @@ var instanceId = 0;
     },
     callLoadOptionsProp: function callLoadOptionsProp(_ref3) {
       var action = _ref3.action,
-        args = _ref3.args,
-        isPending = _ref3.isPending,
-        start = _ref3.start,
-        succeed = _ref3.succeed,
-        fail = _ref3.fail,
-        end = _ref3.end;
+          args = _ref3.args,
+          isPending = _ref3.isPending,
+          start = _ref3.start,
+          succeed = _ref3.succeed,
+          fail = _ref3.fail,
+          end = _ref3.end;
+
       if (!this.loadOptions || isPending()) {
         return;
       }
+
       start();
       var callback = once_default()(function (err, result) {
         if (err) {
@@ -7736,6 +7173,7 @@ var instanceId = 0;
         } else {
           succeed(result);
         }
+
         end();
       });
       var result = this.loadOptions(_objectSpread2(_objectSpread2({
@@ -7745,6 +7183,7 @@ var instanceId = 0;
       }, args), {}, {
         callback: callback
       }));
+
       if (is_promise_default()(result)) {
         result.then(function () {
           callback();
@@ -7758,6 +7197,7 @@ var instanceId = 0;
     },
     checkDuplication: function checkDuplication(node) {
       var _this19 = this;
+
       warning(function () {
         return !(node.id in _this19.forest.nodeMap && !_this19.forest.nodeMap[node.id].isFallbackNode);
       }, function () {
@@ -7775,28 +7215,34 @@ var instanceId = 0;
       if (this.disabled || node.isDisabled) {
         return;
       }
+
       if (this.single) {
         this.clear();
       }
+
       var nextState = this.multiple && !this.flat ? this.forest.checkedStateMap[node.id] === UNCHECKED : !this.isSelected(node);
+
       if (nextState) {
         this._selectNode(node);
       } else {
         this._deselectNode(node);
       }
+
       this.buildForestState();
+
       if (nextState) {
         this.$emit('select', node.raw, this.getInstanceId());
       } else {
         this.$emit('deselect', node.raw, this.getInstanceId());
       }
+
       if (this.localSearch.active && nextState && (this.single || this.clearOnSelect)) {
         this.resetSearchQuery();
       }
-      if (this.single && this.closeOnSelect) {
-        this.closeMenu();
 
-        // istanbul ignore else
+      if (this.single && this.closeOnSelect) {
+        this.closeMenu(); // istanbul ignore else
+
         if (this.searchable) {
           this._blurOnSelect = true;
         }
@@ -7804,25 +7250,32 @@ var instanceId = 0;
     },
     clear: function clear() {
       var _this20 = this;
+
       if (this.hasValue) {
         if (this.single || this.allowClearingDisabled) {
           this.forest.selectedNodeIds = [];
-        } else /* if (this.multiple && !this.allowClearingDisabled) */{
+        } else
+          /* if (this.multiple && !this.allowClearingDisabled) */
+          {
             this.forest.selectedNodeIds = this.forest.selectedNodeIds.filter(function (nodeId) {
               return _this20.getNode(nodeId).isDisabled;
             });
           }
+
         this.buildForestState();
       }
     },
     // This is meant to be called only by `select()`.
     _selectNode: function _selectNode(node) {
       var _this21 = this;
+
       if (this.single || this.disableBranchNodes) {
         return this.addValue(node);
       }
+
       if (this.flat) {
         this.addValue(node);
+
         if (this.autoSelectAncestors) {
           node.ancestors.forEach(function (ancestor) {
             if (!_this21.isSelected(ancestor) && !ancestor.isDisabled) _this21.addValue(ancestor);
@@ -7832,12 +7285,20 @@ var instanceId = 0;
             if (!_this21.isSelected(descendant) && !descendant.isDisabled) _this21.addValue(descendant);
           });
         }
+
         return;
       }
-      var isFullyChecked = node.isLeaf || /* node.isBranch && */!node.hasDisabledDescendants || /* node.isBranch && */this.allowSelectingDisabledDescendants;
+
+      var isFullyChecked = node.isLeaf ||
+      /* node.isBranch && */
+      !node.hasDisabledDescendants ||
+      /* node.isBranch && */
+      this.allowSelectingDisabledDescendants;
+
       if (isFullyChecked) {
         this.addValue(node);
       }
+
       if (node.isBranch) {
         this.traverseDescendantsBFS(node, function (descendant) {
           if (!descendant.isDisabled || _this21.allowSelectingDisabledDescendants) {
@@ -7845,8 +7306,10 @@ var instanceId = 0;
           }
         });
       }
+
       if (isFullyChecked) {
         var curr = node;
+
         while ((curr = curr.parentNode) !== NO_PARENT_NODE) {
           if (curr.children.every(this.isSelected) && !curr.isDisabled) this.addValue(curr);else break;
         }
@@ -7855,11 +7318,14 @@ var instanceId = 0;
     // This is meant to be called only by `select()`.
     _deselectNode: function _deselectNode(node) {
       var _this22 = this;
+
       if (this.disableBranchNodes) {
         return this.removeValue(node);
       }
+
       if (this.flat) {
         this.removeValue(node);
+
         if (this.autoDeselectAncestors) {
           node.ancestors.forEach(function (ancestor) {
             if (_this22.isSelected(ancestor) && !ancestor.isDisabled) _this22.removeValue(ancestor);
@@ -7869,20 +7335,30 @@ var instanceId = 0;
             if (_this22.isSelected(descendant) && !descendant.isDisabled) _this22.removeValue(descendant);
           });
         }
+
         return;
       }
+
       var hasUncheckedSomeDescendants = false;
+
       if (node.isBranch) {
         this.traverseDescendantsDFS(node, function (descendant) {
           if (!descendant.isDisabled || _this22.allowSelectingDisabledDescendants) {
             _this22.removeValue(descendant);
+
             hasUncheckedSomeDescendants = true;
           }
         });
       }
-      if (node.isLeaf || /* node.isBranch && */hasUncheckedSomeDescendants || /* node.isBranch && */node.children.length === 0) {
+
+      if (node.isLeaf ||
+      /* node.isBranch && */
+      hasUncheckedSomeDescendants ||
+      /* node.isBranch && */
+      node.children.length === 0) {
         this.removeValue(node);
         var curr = node;
+
         while ((curr = curr.parentNode) !== NO_PARENT_NODE) {
           if (this.isSelected(curr)) this.removeValue(curr);else break;
         }
@@ -7904,13 +7380,13 @@ var instanceId = 0;
       this.select(lastSelectedNode); // deselect
     },
     saveMenuScrollPosition: function saveMenuScrollPosition() {
-      var $menu = this.getMenu();
-      // istanbul ignore else
+      var $menu = this.getMenu(); // istanbul ignore else
+
       if ($menu) this.menu.lastScrollPosition = $menu.scrollTop;
     },
     restoreMenuScrollPosition: function restoreMenuScrollPosition() {
-      var $menu = this.getMenu();
-      // istanbul ignore else
+      var $menu = this.getMenu(); // istanbul ignore else
+
       if ($menu) $menu.scrollTop = this.menu.lastScrollPosition;
     }
   },
@@ -7939,13 +7415,15 @@ var es_array_join = __webpack_require__("a15b");
 
 
 
+
 function stringifyValue(value) {
-  if (typeof value === 'string') return value;
-  // istanbul ignore else
-  if (value != null && !isNaN_isNaN(value)) return JSON.stringify(value);
-  // istanbul ignore next
+  if (typeof value === 'string') return value; // istanbul ignore else
+
+  if (value != null && !isNaN_isNaN(value)) return JSON.stringify(value); // istanbul ignore next
+
   return '';
 }
+
 /* harmony default export */ var HiddenFieldsvue_type_script_lang_js = (Object(external_commonjs_vue_commonjs2_vue_root_Vue_["defineComponent"])({
   name: 'vue-treeselect--hidden-fields',
   inject: ['instance'],
@@ -7995,10 +7473,12 @@ var es_object_keys = __webpack_require__("b64b");
 
 
 
+
 function isPlainObject(value) {
   if (value == null || _typeof(value) !== 'object') return false;
   return Object.getPrototypeOf(value) === Object.prototype;
 }
+
 function copy(obj, key, value) {
   if (isPlainObject(value)) {
     obj[key] || (obj[key] = {});
@@ -8007,13 +7487,16 @@ function copy(obj, key, value) {
     obj[key] = value;
   }
 }
+
 function deepExtend(target, source) {
   if (isPlainObject(source)) {
     var keys = Object.keys(source);
+
     for (var i = 0, len = keys.length; i < len; i++) {
       copy(target, keys[i], source[keys[i]]);
     }
   }
+
   return target;
 }
 // CONCATENATED MODULE: ./node_modules/cache-loader/dist/cjs.js??ref--13-0!./node_modules/thread-loader/dist/cjs.js!./node_modules/babel-loader/lib!./node_modules/cache-loader/dist/cjs.js??ref--1-0!./node_modules/vue-loader-v16/dist??ref--1-1!./src/components/Input.vue?vue&type=script&lang=js
@@ -8067,6 +7550,7 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
     },
     focus: function focus() {
       var instance = this.instance;
+
       if (!instance.disabled) {
         this.$refs.input && this.$refs.input.focus();
       }
@@ -8076,25 +7560,26 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
     },
     onFocus: function onFocus() {
       var instance = this.instance;
-      instance.trigger.isFocused = true;
-      // istanbul ignore else
+      instance.trigger.isFocused = true; // istanbul ignore else
+
       if (instance.openOnFocus) instance.openMenu();
     },
     onBlur: function onBlur() {
       var instance = this.instance;
-      var menu = instance.getMenu();
-
-      // #15
+      var menu = instance.getMenu(); // #15
       // istanbul ignore next
+
       if (menu && document.activeElement === menu) {
         return this.focus();
       }
+
       instance.trigger.isFocused = false;
       instance.closeMenu();
     },
     onInput: function onInput(evt) {
       var value = evt.target.value;
       this.value = value;
+
       if (value) {
         this.debouncedCallback();
       } else {
@@ -8104,23 +7589,29 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
     },
     // 用 keyUp 事件存在一个问题，删除输入框最后一个字符也会导致取消选中最后一项
     onKeyDown: function onKeyDown(evt) {
-      var instance = this.instance;
-      // https://css-tricks.com/snippets/javascript/javascript-keycodes/
+      var instance = this.instance; // https://css-tricks.com/snippets/javascript/javascript-keycodes/
       // https://stackoverflow.com/questions/4471582/javascript-keycode-vs-which
-      var key = 'which' in evt ? evt.which : /* istanbul ignore next */evt.keyCode;
+
+      var key = 'which' in evt ? evt.which :
+      /* istanbul ignore next */
+      evt.keyCode;
       if (evt.ctrlKey || evt.shiftKey || evt.altKey || evt.metaKey) return;
+
       if (!instance.menu.isOpen && includes(keysThatRequireMenuBeingOpen, key)) {
         evt.preventDefault();
         return instance.openMenu();
       }
+
       switch (key) {
         case KEY_CODES.BACKSPACE:
           {
             if (instance.backspaceRemoves && !this.value.length) {
               instance.removeLastValue();
             }
+
             break;
           }
+
         case KEY_CODES.ENTER:
           {
             evt.preventDefault();
@@ -8130,6 +7621,7 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
             instance.select(current);
             break;
           }
+
         case KEY_CODES.ESCAPE:
           {
             if (this.value.length) {
@@ -8137,23 +7629,28 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
             } else if (instance.menu.isOpen) {
               instance.closeMenu();
             }
+
             break;
           }
+
         case KEY_CODES.END:
           {
             evt.preventDefault();
             instance.highlightLastOption();
             break;
           }
+
         case KEY_CODES.HOME:
           {
             evt.preventDefault();
             instance.highlightFirstOption();
             break;
           }
+
         case KEY_CODES.ARROW_LEFT:
           {
             var _current = instance.getNode(instance.menu.current);
+
             if (_current.isBranch && instance.shouldExpand(_current)) {
               evt.preventDefault();
               instance.toggleExpanded(_current);
@@ -8161,36 +7658,45 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
               evt.preventDefault();
               instance.setCurrentHighlightedOption(_current.parentNode);
             }
+
             break;
           }
+
         case KEY_CODES.ARROW_UP:
           {
             evt.preventDefault();
             instance.highlightPrevOption();
             break;
           }
+
         case KEY_CODES.ARROW_RIGHT:
           {
             var _current2 = instance.getNode(instance.menu.current);
+
             if (_current2.isBranch && !instance.shouldExpand(_current2)) {
               evt.preventDefault();
               instance.toggleExpanded(_current2);
             }
+
             break;
           }
+
         case KEY_CODES.ARROW_DOWN:
           {
             evt.preventDefault();
             instance.highlightNextOption();
             break;
           }
+
         case KEY_CODES.DELETE:
           {
             if (instance.deleteRemoves && !this.value.length) {
               instance.removeLastValue();
             }
+
             break;
           }
+
         default:
           {
             // istanbul ignore else
@@ -8210,10 +7716,12 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
       var instance = this.instance;
       var props = {};
       var children = [];
+
       if (instance.searchable && !instance.disabled) {
         children.push(this.renderInput());
         if (this.needAutoSize) children.push(this.renderSizer());
       }
+
       if (!instance.searchable) {
         deepExtend(props, {
           on: {
@@ -8224,6 +7732,7 @@ var keysThatRequireMenuBeingOpen = [KEY_CODES.ENTER, KEY_CODES.END, KEY_CODES.HO
           ref: 'input'
         });
       }
+
       if (!instance.searchable && !instance.disabled) {
         deepExtend(props, {
           attrs: {
@@ -8322,7 +7831,7 @@ const Placeholder_exports_ = Placeholdervue_type_script_lang_js;
   },
   render: function render() {
     var instance = this.instance,
-      renderValueContainer = this.$parent.renderValueContainer;
+        renderValueContainer = this.$parent.renderValueContainer;
     var shouldShowValue = instance.hasValue && !instance.trigger.searchQuery;
     var children = [Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Placeholder), Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Input, {
       ref: 'input'
@@ -8392,15 +7901,14 @@ const Delete_exports_ = /*#__PURE__*/exportHelper_default()(Deletevue_type_scrip
   methods: {
     handleMouseDown: onLeftClick(function handleMouseDown() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node; // Deselect this node.
 
-      // Deselect this node.
       instance.select(node);
     })
   },
   render: function render() {
     var instance = this.instance,
-      node = this.node;
+        node = this.node;
     var itemClass = {
       'vue-treeselect__multi-value-item': true,
       'vue-treeselect__multi-value-item-disabled': node.isDisabled,
@@ -8532,6 +8040,7 @@ const Arrow_exports_ = /*#__PURE__*/exportHelper_default()(Arrowvue_type_script_
   inject: ['instance'],
   computed: {
     /* eslint-disable valid-jsdoc */
+
     /**
      * Should show the "×" button that resets value?
      * @return {boolean}
@@ -8540,17 +8049,19 @@ const Arrow_exports_ = /*#__PURE__*/exportHelper_default()(Arrowvue_type_script_
       var instance = this.instance;
       return instance.clearable && !instance.disabled && instance.hasValue && (this.hasUndisabledValue || instance.allowClearingDisabled);
     },
+
     /**
      * Should show the arrow button that toggles menu?
      * @return {boolean}
      */
     shouldShowArrow: function shouldShowArrow() {
       var instance = this.instance;
-      if (!instance.alwaysOpen) return true;
-      // Even with `alwaysOpen: true`, sometimes the menu is still closed,
+      if (!instance.alwaysOpen) return true; // Even with `alwaysOpen: true`, sometimes the menu is still closed,
       // e.g. when the control is disabled.
+
       return !instance.menu.isOpen;
     },
+
     /**
      * Has any undisabled option been selected?
      * @type {boolean}
@@ -8560,7 +8071,9 @@ const Arrow_exports_ = /*#__PURE__*/exportHelper_default()(Arrowvue_type_script_
       return instance.hasValue && instance.internalValue.some(function (id) {
         return !instance.getNode(id).isDisabled;
       });
-    } /* eslint-enable valid-jsdoc */
+    }
+    /* eslint-enable valid-jsdoc */
+
   },
   methods: {
     renderX: function renderX() {
@@ -8598,14 +8111,15 @@ const Arrow_exports_ = /*#__PURE__*/exportHelper_default()(Arrowvue_type_script_
        * class, since we are targeting to support IE9 without the
        * need of any polyfill.
        */
-
       evt.stopPropagation();
       evt.preventDefault();
       var instance = this.instance;
       var result = instance.beforeClearAll();
+
       var handler = function handler(shouldClear) {
         if (shouldClear) instance.clear();
       };
+
       if (is_promise_default()(result)) {
         // The handler will be called async.
         result.then(handler);
@@ -8613,20 +8127,17 @@ const Arrow_exports_ = /*#__PURE__*/exportHelper_default()(Arrowvue_type_script_
         // Keep the same behavior here.
         setTimeout(function () {
           return handler(result);
-        }, 0);
-        // Also, note that IE9 requires:
+        }, 0); // Also, note that IE9 requires:
         //   setTimeout(() => fn(...args), delay)
         // Instead of:
         //   setTimeout(fn, delay, ...args)
       }
     }),
-
     handleMouseDownOnArrow: onLeftClick(function handleMouseDownOnArrow(evt) {
       evt.preventDefault();
       evt.stopPropagation();
-      var instance = this.instance;
+      var instance = this.instance; // Focus the input or prevent blurring.
 
-      // Focus the input or prevent blurring.
       instance.focusInput();
       instance.toggleMenu();
     }),
@@ -8722,22 +8233,26 @@ var index_es_index = (function (element, listener) {
 var intervalId;
 var registered = [];
 var INTERVAL_DURATION = 100;
+
 function run() {
   intervalId = setInterval(function () {
     registered.forEach(test);
   }, INTERVAL_DURATION);
 }
+
 function stop() {
   clearInterval(intervalId);
   intervalId = null;
 }
+
 function test(item) {
   var $el = item.$el,
-    listener = item.listener,
-    lastWidth = item.lastWidth,
-    lastHeight = item.lastHeight;
+      listener = item.listener,
+      lastWidth = item.lastWidth,
+      lastHeight = item.lastHeight;
   var width = $el.offsetWidth;
   var height = $el.offsetHeight;
+
   if (lastWidth !== width || lastHeight !== height) {
     item.lastWidth = width;
     item.lastHeight = height;
@@ -8747,6 +8262,7 @@ function test(item) {
     });
   }
 }
+
 function watchSizeForIE9($el, listener) {
   var item = {
     $el: $el,
@@ -8754,26 +8270,31 @@ function watchSizeForIE9($el, listener) {
     lastWidth: null,
     lastHeight: null
   };
+
   var unwatch = function unwatch() {
     removeFromArray(registered, item);
     if (!registered.length) stop();
   };
-  registered.push(item);
-  // The original watch-size will call the listener on initialization.
+
+  registered.push(item); // The original watch-size will call the listener on initialization.
   // Keep the same behavior here.
+
   test(item);
   run();
   return unwatch;
 }
+
 function watchSize($el, listener) {
   // See: https://stackoverflow.com/a/31293352
-  var isIE9 = document.documentMode === 9;
-  // watch-size will call the listener on initialization.
+  var isIE9 = document.documentMode === 9; // watch-size will call the listener on initialization.
   // Disable this behavior with a lock to achieve a clearer code logic.
+
   var locked = true;
+
   var wrappedListener = function wrappedListener() {
     return locked || listener.apply(void 0, arguments);
   };
+
   var implementation = isIE9 ? watchSizeForIE9 : index_es;
   var removeSizeWatcher = implementation($el, wrappedListener);
   locked = false; // unlock after initialization
@@ -8793,21 +8314,26 @@ var es_regexp_test = __webpack_require__("00b4");
 function findScrollParents($el) {
   var $scrollParents = [];
   var $parent = $el.parentNode;
+
   while ($parent && $parent.nodeName !== 'BODY' && $parent.nodeType === document.ELEMENT_NODE) {
     if (isScrollElment($parent)) $scrollParents.push($parent);
     $parent = $parent.parentNode;
   }
+
   $scrollParents.push(window);
   return $scrollParents;
 }
+
 function isScrollElment($el) {
   // Firefox wants us to check `-x` and `-y` variations as well
   var _getComputedStyle = getComputedStyle($el),
-    overflow = _getComputedStyle.overflow,
-    overflowX = _getComputedStyle.overflowX,
-    overflowY = _getComputedStyle.overflowY;
+      overflow = _getComputedStyle.overflow,
+      overflowX = _getComputedStyle.overflowX,
+      overflowY = _getComputedStyle.overflowY;
+
   return /(auto|scroll|overlay)/.test(overflow + overflowY + overflowX);
 }
+
 function setupResizeAndScrollEventListeners($el, listener) {
   var $scrollParents = findScrollParents($el);
   window.addEventListener('resize', listener, {
@@ -8887,19 +8413,19 @@ var Option = {
   computed: {
     shouldExpand: function shouldExpand() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       return node.isBranch && instance.shouldExpand(node);
     },
     shouldShow: function shouldShow() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       return instance.shouldShowOptionInMenu(node);
     }
   },
   methods: {
     renderOption: function renderOption() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       var optionClass = {
         'vue-treeselect__option': true,
         'vue-treeselect__option--disabled': node.isDisabled,
@@ -8922,8 +8448,9 @@ var Option = {
     },
     renderArrow: function renderArrow() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       if (instance.shouldFlattenOptions && this.shouldShow) return null;
+
       if (node.isBranch) {
         var arrowClass = {
           'vue-treeselect__option-arrow': true,
@@ -8952,6 +8479,7 @@ var Option = {
         });
         return arrowPlaceholder;
       }
+
       return null;
     },
     renderLabelContainer: function renderLabelContainer(children) {
@@ -8962,7 +8490,7 @@ var Option = {
     },
     renderCheckboxContainer: function renderCheckboxContainer(children) {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       if (instance.single) return null;
       if (instance.disableBranchNodes && node.isBranch) return null;
       return Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])('div', {
@@ -8971,7 +8499,7 @@ var Option = {
     },
     renderCheckbox: function renderCheckbox() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       var checkedState = instance.forest.checkedStateMap[node.id];
       var checkboxClass = {
         'vue-treeselect__checkbox': true,
@@ -8992,7 +8520,7 @@ var Option = {
     },
     renderLabel: function renderLabel() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       var shouldShowCount = node.isBranch && (instance.localSearch.active ? instance.showCountOnSearchComputed : instance.showCount);
       var count = shouldShowCount ? instance.localSearch.active ? instance.localSearch.countMap[node.id][instance.showCountOf] : node.count[instance.showCountOf] : NaN;
       var labelClassName = 'vue-treeselect__label';
@@ -9031,7 +8559,7 @@ var Option = {
     },
     renderNoChildrenTip: function renderNoChildrenTip() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       if (!node.childrenStates.isLoaded || node.children.length) return null;
       return Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Tip, {
         type: 'no-children',
@@ -9041,7 +8569,7 @@ var Option = {
     },
     renderLoadingChildrenTip: function renderLoadingChildrenTip() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       if (!node.childrenStates.isLoading) return null;
       return Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Tip, {
         type: 'loading',
@@ -9051,7 +8579,7 @@ var Option = {
     },
     renderLoadingChildrenErrorTip: function renderLoadingChildrenErrorTip() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       if (!node.childrenStates.loadingError) return null;
       return Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Tip, {
         type: 'error',
@@ -9066,21 +8594,21 @@ var Option = {
     },
     handleMouseEnterOption: function handleMouseEnterOption(evt) {
       var instance = this.instance,
-        node = this.node;
-
-      // Equivalent to `self` modifier.
+          node = this.node; // Equivalent to `self` modifier.
       // istanbul ignore next
+
       if (evt.target !== evt.currentTarget) return;
       instance.setCurrentHighlightedOption(node, false);
     },
     handleMouseDownOnArrow: onLeftClick(function handleMouseDownOnOptionArrow() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       instance.toggleExpanded(node);
     }),
     handleMouseDownOnLabelContainer: onLeftClick(function handleMouseDownOnLabelContainer() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
+
       if (node.isBranch && instance.disableBranchNodes) {
         instance.toggleExpanded(node);
       } else {
@@ -9089,13 +8617,14 @@ var Option = {
     }),
     handleMouseDownOnRetry: onLeftClick(function handleMouseDownOnRetry() {
       var instance = this.instance,
-        node = this.node;
+          node = this.node;
       instance.loadChildrenOptions(node);
     })
   },
   render: function render() {
     var node = this.node;
     var indentLevel = this.instance.shouldFlattenOptions ? 0 : node.level;
+
     var listItemClass = _defineProperty({
       'vue-treeselect__list-item': true
     }, "vue-treeselect__indent-level-".concat(indentLevel), true);
@@ -9112,9 +8641,8 @@ var Option = {
       class: listItemClass
     }, [this.renderOption()]);
   }
-};
+}; // eslint-disable-next-line vue/require-direct-export
 
-// eslint-disable-next-line vue/require-direct-export
 /* harmony default export */ var Optionvue_type_script_lang_js = (Option);
 // CONCATENATED MODULE: ./src/components/Option.vue
 
@@ -9161,9 +8689,6 @@ var directionMap = {
       } else {
         this.onMenuClose();
       }
-    },
-    'instance.forest': function instanceForest(newValue) {
-      console.log('instance forest', newValue);
     }
   },
   created: function created() {
@@ -9201,6 +8726,7 @@ var directionMap = {
     },
     renderNormalMenuInner: function renderNormalMenuInner() {
       var instance = this.instance;
+
       if (instance.rootOptionsStates.isLoading) {
         return this.renderLoadingOptionsTip();
       } else if (instance.rootOptionsStates.loadingError) {
@@ -9213,6 +8739,7 @@ var directionMap = {
     },
     renderLocalSearchMenuInner: function renderLocalSearchMenuInner() {
       var instance = this.instance;
+
       if (instance.rootOptionsStates.isLoading) {
         return this.renderLoadingOptionsTip();
       } else if (instance.rootOptionsStates.loadingError) {
@@ -9230,6 +8757,7 @@ var directionMap = {
       var entry = instance.getRemoteSearchEntry();
       var shouldShowSearchPromptTip = instance.trigger.searchQuery === '' && !instance.defaultOptions && instance.minChar > 0;
       var shouldShowNoResultsTip = shouldShowSearchPromptTip ? false : entry.isLoaded && entry.options.length === 0;
+
       if (shouldShowSearchPromptTip) {
         return this.renderSearchPromptTip();
       } else if (entry.isLoading) {
@@ -9308,9 +8836,7 @@ var directionMap = {
     },
     renderAsyncSearchLoadingErrorTip: function renderAsyncSearchLoadingErrorTip() {
       var instance = this.instance;
-      var entry = instance.getRemoteSearchEntry();
-
-      // TODO: retryTitle?
+      var entry = instance.getRemoteSearchEntry(); // TODO: retryTitle?
 
       return Object(external_commonjs_vue_commonjs2_vue_root_Vue_["h"])(Tip, {
         type: 'error',
@@ -9358,6 +8884,7 @@ var directionMap = {
       var isControlInViewport = controlRect.top >= 0 && controlRect.top <= viewportHeight || controlRect.top < 0 && controlRect.bottom > 0;
       var hasEnoughSpaceBelow = spaceBelow > menuHeight + MENU_BUFFER;
       var hasEnoughSpaceAbove = spaceAbove > menuHeight + MENU_BUFFER;
+
       if (!isControlInViewport) {
         instance.closeMenu();
       } else if (instance.openDirection !== 'auto') {
@@ -9370,9 +8897,8 @@ var directionMap = {
     },
     setupMenuSizeWatcher: function setupMenuSizeWatcher() {
       var instance = this.instance;
-      var $menu = instance.getMenu();
+      var $menu = instance.getMenu(); // istanbul ignore next
 
-      // istanbul ignore next
       if (this.menuSizeWatcher) return;
       this.menuSizeWatcher = {
         remove: watchSize($menu, this.adjustMenuOpenDirection)
@@ -9380,9 +8906,8 @@ var directionMap = {
     },
     setupMenuResizeAndScrollEventListeners: function setupMenuResizeAndScrollEventListeners() {
       var instance = this.instance;
-      var $control = instance.getControl();
+      var $control = instance.getControl(); // istanbul ignore next
 
-      // istanbul ignore next
       if (this.menuResizeAndScrollEventListeners) return;
       this.menuResizeAndScrollEventListeners = {
         remove: setupResizeAndScrollEventListeners($control, this.adjustMenuOpenDirection)
@@ -9459,9 +8984,8 @@ var PortalTarget = {
     },
     setupControlResizeAndScrollEventListeners: function setupControlResizeAndScrollEventListeners() {
       var instance = this.instance;
-      var $control = instance.getControl();
+      var $control = instance.getControl(); // istanbul ignore next
 
-      // istanbul ignore next
       if (this.controlResizeAndScrollEventListeners) return;
       this.controlResizeAndScrollEventListeners = {
         remove: setupResizeAndScrollEventListeners($control, this.updateMenuContainerOffset)
@@ -9469,14 +8993,15 @@ var PortalTarget = {
     },
     setupControlSizeWatcher: function setupControlSizeWatcher() {
       var _this = this;
-      var instance = this.instance;
-      var $control = instance.getControl();
 
-      // istanbul ignore next
+      var instance = this.instance;
+      var $control = instance.getControl(); // istanbul ignore next
+
       if (this.controlSizeWatcher) return;
       this.controlSizeWatcher = {
         remove: watchSize($control, function () {
           _this.updateWidth();
+
           _this.updateMenuContainerOffset();
         })
       };
@@ -9511,9 +9036,8 @@ var PortalTarget = {
       var transformVariations = ['transform', 'webkitTransform', 'MozTransform', 'msTransform'];
       var transform = find(transformVariations, function (t) {
         return t in document.body.style;
-      });
+      }); // IE9 doesn't support `translate3d()`.
 
-      // IE9 doesn't support `translate3d()`.
       menuContainerStyle[transform] = "translate(".concat(left, ", ").concat(top, ")");
     }
   },
@@ -9554,8 +9078,7 @@ var placeholder;
       this.portalTarget = Object(external_commonjs_vue_commonjs2_vue_root_Vue_["createApp"])(_objectSpread2({
         parent: this
       }, PortalTarget));
-      this.portalTarget.mount(el);
-      // this.portalTarget = new Vue({
+      this.portalTarget.mount(el); // this.portalTarget = new Vue({
       //   el,
       //   parent: this,
       //   ...PortalTarget,
@@ -9615,9 +9138,7 @@ const MenuPortal_exports_ = MenuPortalvue_type_script_lang_js;
         'vue-treeselect--append-to-body': this.appendToBody
       };
     }
-  }
-
-  // render() {
+  } // render() {
   //   return (
   //     <div ref="wrapper" class={this.wrapperClass}>
   //       <HiddenFields />
@@ -9626,6 +9147,7 @@ const MenuPortal_exports_ = MenuPortalvue_type_script_lang_js;
   //     </div>
   //   )
   // },
+
 }));
 // CONCATENATED MODULE: ./src/components/Treeselect.vue
 
@@ -9703,7 +9225,7 @@ $({ target: 'Array', proto: true, forced: !HAS_SPECIES_SUPPORT }, {
         return un$Slice(O, k, fin);
       }
     }
-    result = new (Constructor === undefined ? $Array : Constructor)(max(fin - k, 0));
+    result = new (Constructor === undefined ? Array : Constructor)(max(fin - k, 0));
     for (n = 0; k < fin; k++, n++) if (k in O) createProperty(result, n, O[k]);
     result.length = n;
     return result;
