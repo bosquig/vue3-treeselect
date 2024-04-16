@@ -1,5 +1,4 @@
 <script>
-  import { h } from 'vue'
   import { isNaN } from '../utils'
   import {defineComponent} from 'vue';
 
@@ -27,16 +26,13 @@
         stringifiedValues.join(instance.delimiter),
       ]
 
-      return stringifiedValues.map((stringifiedValue, i) => {
-        return h(
-            'input',
-            {
-              type: 'hidden',
-              name: instance.name,
-              key: 'hidden-field-' + i,
-            }
-        )
-      })
+      return stringifiedValues.map((stringifiedValue, i) => (
+        <input type="hidden"
+          name={instance.name}
+          value={stringifiedValue}
+          key={'hidden-field-' + i}
+        />
+      ))
     },
   })
 </script>

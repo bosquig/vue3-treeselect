@@ -1,6 +1,5 @@
 <script>
-  import {defineComponent} from 'vue'
-  import { h } from 'vue'
+  import {defineComponent} from 'vue';
   export default defineComponent({
     name: 'vue-treeselect--tip',
     functional: true,
@@ -19,34 +18,15 @@
     render(context) {
       const { type,icon } = this
 
-      return h(
-          'div',
-          {
-            class: `vue-treeselect__tip vue-treeselect__${type}-tip`,
-          },
-          [
-              h(
-                  'div',
-                  {
-                    class: 'vue-treeselect__icon-container',
-                  },
-                  [
-                      h(
-                          'span',
-                          {
-                            class: `vue-treeselect__icon-${icon}`,
-                          }
-                      ),
-                  ]
-              ),
-              h(
-                  'span',
-                  {
-                    class: `vue-treeselect__tip-text vue-treeselect__${type}-tip-text`,
-                  },
-                  this.$slots.default()
-              )
-          ]
+      return (
+        <div class={`vue-treeselect__tip vue-treeselect__${type}-tip`}>
+          <div class="vue-treeselect__icon-container">
+            <span class={`vue-treeselect__icon-${icon}`} />
+          </div>
+          <span class={`vue-treeselect__tip-text vue-treeselect__${type}-tip-text`}>
+            {this.$slots.default()}
+          </span>
+        </div>
       )
     },
   })

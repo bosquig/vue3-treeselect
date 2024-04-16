@@ -1,5 +1,4 @@
 <script>
-  import { h } from 'vue'
   import { debounce, deepExtend, includes } from '../utils'
   import { MIN_INPUT_WIDTH, KEY_CODES, INPUT_DEBOUNCE_DELAY } from '../constants'
 
@@ -241,47 +240,37 @@
           })
         }
 
-        return h(
-            'div',
-            {
-              class: 'vue-treeselect__input-container',
-              ...props,
-            },
-            children
+        return (
+          <div class="vue-treeselect__input-container" {...props}>
+            {children}
+          </div>
         )
       },
 
       renderInput() {
         const { instance } = this
 
-        return h(
-            'input',
-            {
-              ref: 'input',
-              class: 'vue-treeselect__input',
-              type: 'text',
-              autocomplete: 'off',
-              tabIndex: instance.tabIndex,
-              required: instance.required && !instance.hasValue,
-              value: this.value,
-              style: this.inputStyle,
-              onFocus: this.onFocus,
-              onInput: this.onInput,
-              onBlur: this.onBlur,
-              onKeydown: this.onKeyDown,
-              onMousedown: this.onMouseDown,
-            }
+        return (
+          <input ref="input"
+            class="vue-treeselect__input"
+            type="text"
+            autocomplete="off"
+            tabIndex={instance.tabIndex}
+            required={instance.required && !instance.hasValue}
+            value={this.value}
+            style={this.inputStyle}
+            onFocus={this.onFocus}
+            onInput={this.onInput}
+            onBlur={this.onBlur}
+            onKeydown={this.onKeyDown}
+            onMousedown={this.onMouseDown}
+          />
         )
       },
 
       renderSizer() {
-        return h(
-            'div',
-            {
-              ref: 'sizer',
-              class: 'vue-treeselect__sizer',
-            },
-            this.value,
+        return (
+          <div ref="sizer" class="vue-treeselect__sizer">{this.value}</div>
         )
       },
 
