@@ -1,4 +1,5 @@
 <script>
+  import { h } from 'vue'
   import {createApp} from 'vue'
   import { watchSize, setupResizeAndScrollEventListeners, find } from '../utils'
   import Menu from './Menu'
@@ -118,10 +119,21 @@
       const portalTargetClass = [ 'vue-treeselect__portal-target', instance.wrapperClass ]
       const portalTargetStyle = { zIndex: instance.zIndex }
 
-      return (
-        <div class={portalTargetClass} style={portalTargetStyle} data-instance-id={instance.getInstanceId()}>
-          <Menu ref="menu" />
-        </div>
+      return h(
+          'div',
+          {
+            class: portalTargetClass,
+            style: portalTargetStyle,
+            'data-instance-id': instance.getInstanceId(),
+          },
+          [
+              h(
+                  Menu,
+                  {
+                    ref: 'menu',
+                  }
+              ),
+          ]
       )
     },
 
@@ -174,8 +186,11 @@
     },
 
     render() {
-      if (!placeholder) placeholder = (
-        <div class="vue-treeselect__menu-placeholder" />
+      if (!placeholder) placeholder = h(
+          'div',
+          {
+            class: 'vue-treeselect__menu-placeholder',
+          }
       )
 
       return placeholder

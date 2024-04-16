@@ -1,4 +1,5 @@
 <script>
+  import { h } from 'vue'
   import { onLeftClick } from '../utils'
   import DeleteIcon from './icons/Delete'
 
@@ -32,13 +33,38 @@
       const customValueLabelRenderer = instance.$slots['value-label']
       const labelRenderer = customValueLabelRenderer ? customValueLabelRenderer({ node }) : node.label
 
-      return (
-        <div class="vue-treeselect__multi-value-item-container">
-          <div class={itemClass} onMousedown={this.handleMouseDown}>
-            <span class="vue-treeselect__multi-value-label">{ labelRenderer }</span>
-            <span class="vue-treeselect__icon vue-treeselect__value-remove"><DeleteIcon /></span>
-          </div>
-        </div>
+      return h(
+          'div',
+          {
+            class: 'vue-treeselect__multi-value-item-container',
+          },
+          [
+              h(
+                  'div',
+                  {
+                    class: itemClass,
+                    onMousedown: this.handleMouseDown,
+                  },
+                  [
+                      h(
+                          'span',
+                          {
+                            class: 'vue-treeselect__multi-value-label',
+                          },
+                          labelRenderer
+                      ),
+                      h(
+                          'span',
+                          {
+                            class: 'vue-treeselect__icon vue-treeselect__value-remove',
+                          },
+                          [
+                              h(DeleteIcon)
+                          ]
+                      )
+                  ]
+              )
+          ]
       )
     },
   }
