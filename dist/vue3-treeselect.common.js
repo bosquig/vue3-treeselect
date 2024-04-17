@@ -8435,6 +8435,14 @@ var Option = {
     }
   },
   methods: {
+    renderSuffix: function renderSuffix() {
+      var instance = this.instance,
+          node = this.node;
+      var optionSuffix = instance.$slots['suffix'];
+      return optionSuffix ? optionSuffix({
+        node: node
+      }) : null;
+    },
     renderOption: function renderOption() {
       var h = this.$createElement;
       var instance = this.instance,
@@ -8451,7 +8459,7 @@ var Option = {
         "class": optionClass,
         "onMouseenter": this.handleMouseEnterOption,
         "data-id": node.id
-      }, [this.renderArrow(), this.renderLabelContainer([this.renderCheckboxContainer([this.renderCheckbox()]), this.renderLabel()])]);
+      }, [this.renderArrow(), this.renderLabelContainer([this.renderCheckboxContainer([this.renderCheckbox()]), this.renderLabel(), this.renderSuffix()])]);
     },
     renderSubOptionsList: function renderSubOptionsList() {
       var h = this.$createElement;

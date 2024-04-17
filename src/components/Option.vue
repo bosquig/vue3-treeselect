@@ -31,6 +31,15 @@
     },
 
     methods: {
+      renderSuffix() {
+        const { instance, node } = this
+        const optionSuffix = instance.$slots['suffix']
+
+        return optionSuffix
+          ? optionSuffix({ node })
+          : null
+      },
+
       renderOption() {
         const { instance, node } = this
         const optionClass = {
@@ -50,6 +59,7 @@
                 this.renderCheckbox(),
               ]),
               this.renderLabel(),
+              this.renderSuffix(),
             ])}
           </div>
         )
